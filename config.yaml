@@ -1,0 +1,661 @@
+esphome:
+  name: passerelle-energie-waveshare
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf  # Essentiel pour la stabilité de l'UART/Modbus sur l'ESP32-S3
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+
+web_server:
+  port: 80
+
+# =====================================================================
+# VARIABLES ET CLIENT HTTP POUR LE SMARTEVSE
+# =====================================================================
+
+http_request:
+  id: smartevse_http
+  # 300ms d'origine causait ~40-50% d'échecs "connection error" une fois le polling
+  # Modbus accéléré (plus de charge UART/CPU laisse moins de marge au stack WiFi).
+  # 1000ms reste largement sous le timeout de communication SmartEVSE (11s).
+  timeout: 1000ms
+
+globals:
+  - id: smartevse_mains_da
+    type: int
+    initial_value: '0'
+
+  - id: smartevse_ev_da
+    type: int
+    initial_value: '0'
+
+  - id: smartevse_ev_power_w
+    type: int
+    initial_value: '0'
+
+  - id: smartevse_ev_energy_wh
+    type: int
+    initial_value: '0'
+
+# =====================================================================
+# 1. DECLARATION DES DEUX PORTS SERIE (UART) WAVESHARE
+# =====================================================================
+uart:
+  # Port A : Pour le RS485 de l'Acrel (Bornier Vert)
+  - id: modbus_uart
+    tx_pin: GPIO17
+    rx_pin: GPIO18
+    # tx_enable_pin retiré d'ici ! (piloté par modbus: flow_control_pin)
+    baud_rate: 9600
+    data_bits: 8
+    # L'ADL400 Acrel sort d'usine en 8N1 (parité NONE). EVEN empêchait
+    # toute réponse du compteur (trames rejetées côté esclave).
+    parity: NONE
+    stop_bits: 1
+    rx_buffer_size: 256
+
+  # Port B : Pour la Téléinfo (Connecteur SH1.0)
+  - id: teleinfo_uart
+    rx_pin: GPIO2
+    baud_rate: 9600
+    data_bits: 8
+    parity: NONE
+    stop_bits: 1
+
+# =====================================================================
+# 2. CONFIGURATION DES PROTOCOLES
+# =====================================================================
+modbus:
+  id: modbus_bus
+  uart_id: modbus_uart
+  flow_control_pin: GPIO21  # Pilote le sens RS485 (EN sur le schéma Waveshare)
+  # Défaut ESPHome = 600ms de silence forcé après CHAQUE commande, indépendant du baud rate.
+  # C'est le vrai goulot d'étranglement du cycle de lecture (~8 groupes de registres/cycle).
+  # Réduit à 100ms ; si des erreurs/timeouts Modbus apparaissent dans les logs, remonter la valeur.
+  turnaround_time: 100ms
+
+modbus_controller:
+  - id: acrel_adl400
+    address: 0x0B
+    modbus_id: modbus_bus
+    # Défaut ESPHome = 60s. Avec turnaround_time réduit, un cycle complet tient dans ~1.5-2s,
+    # donc on peut repasser le compteur à 3s pour que la boucle d'envoi SmartEVSE ait des
+    # données fraîches à chaque itération plutôt que de renvoyer une valeur périmée.
+    update_interval: 3s
+
+teleinfo:
+  id: linky_tic
+  uart_id: teleinfo_uart
+  historical_mode: false # Linky en mode Standard
+
+# =====================================================================
+# 3. CAPTEURS (Acrel et Linky)
+# =====================================================================
+
+sensor:
+  # --- COURANTS ACREL (Pour le calcul Monophasé) ---
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Courant L1 (Rangée 1)"
+    id: acrel_current_l1
+    register_type: holding
+    address: 0x0064 # Confirmé datasheet ADL400 : résolution 0.01A
+    value_type: U_WORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "A"
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Courant L2 (Voiture EV)"
+    id: acrel_current_l2
+    register_type: holding
+    address: 0x0065
+    value_type: U_WORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "A"
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Courant L3 (Rangée 2)"
+    id: acrel_current_l3
+    register_type: holding
+    address: 0x0066
+    value_type: U_WORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "A"
+
+  # --- TENSIONS ACREL ---
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Tension L1"
+    id: acrel_voltage_l1
+    register_type: holding
+    address: 0x0061 # Résolution 0.1V (manuel ADL400 §9.1)
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    unit_of_measurement: "V"
+    device_class: voltage
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Tension L2"
+    id: acrel_voltage_l2
+    register_type: holding
+    address: 0x0062
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    unit_of_measurement: "V"
+    device_class: voltage
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Tension L3"
+    id: acrel_voltage_l3
+    register_type: holding
+    address: 0x0063
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    unit_of_measurement: "V"
+    device_class: voltage
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Fréquence"
+    id: acrel_frequency
+    register_type: holding
+    address: 0x0077 # Résolution 0.01Hz
+    value_type: U_WORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "Hz"
+    device_class: frequency
+
+  # --- PUISSANCES ACREL ---
+  # Registres 32 bits (2 mots). Si les valeurs lues sont aberrantes,
+  # remplacer S_DWORD/U_DWORD par S_DWORD_R/U_DWORD_R (ordre des mots inversé).
+  #
+  # CONSOLIDATION LECTURES MODBUS : ESPHome ne fusionne des capteurs en une seule
+  # requête que si leurs adresses sont STRICTEMENT contiguës (pas de "max gap"
+  # configurable). Le bloc 0x0164-0x017F est un span continu de 28 registres dans
+  # le datasheet (puissances actives/réactives/apparentes + cosphi, par phase et
+  # total) : en ajoutant les capteurs par-phase qui manquaient (réactif/apparent/PF
+  # A/B/C), ce bloc entier passe de 4 requêtes Modbus séparées à 1 seule, sans
+  # rien sacrifier (les données par-phase sont utiles en plus). Gain estimé :
+  # ~3 x turnaround_time (~300ms) par cycle de lecture.
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Active L1"
+    id: acrel_active_power_l1
+    register_type: holding
+    address: 0x0164 # Résolution 0.001kW
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Active L2"
+    id: acrel_active_power_l2
+    register_type: holding
+    address: 0x0166
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Active L3"
+    id: acrel_active_power_l3
+    register_type: holding
+    address: 0x0168
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Active Totale"
+    id: acrel_active_power_total
+    register_type: holding
+    address: 0x016A
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kW"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Réactive L1"
+    id: acrel_reactive_power_l1
+    register_type: holding
+    address: 0x016C # Résolution 0.001kvar
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kvar"
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Réactive L2"
+    id: acrel_reactive_power_l2
+    register_type: holding
+    address: 0x016E
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kvar"
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Réactive L3"
+    id: acrel_reactive_power_l3
+    register_type: holding
+    address: 0x0170
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kvar"
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Réactive Totale"
+    id: acrel_reactive_power_total
+    register_type: holding
+    address: 0x0172 # Résolution 0.001kvar
+    value_type: S_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kvar"
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Apparente L1"
+    id: acrel_apparent_power_l1
+    register_type: holding
+    address: 0x0174 # Résolution 0.001kVA
+    value_type: U_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kVA"
+    device_class: apparent_power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Apparente L2"
+    id: acrel_apparent_power_l2
+    register_type: holding
+    address: 0x0176
+    value_type: U_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kVA"
+    device_class: apparent_power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Apparente L3"
+    id: acrel_apparent_power_l3
+    register_type: holding
+    address: 0x0178
+    value_type: U_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kVA"
+    device_class: apparent_power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Puissance Apparente Totale"
+    id: acrel_apparent_power_total
+    register_type: holding
+    address: 0x017A # Résolution 0.001kVA
+    value_type: U_DWORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kVA"
+    device_class: apparent_power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Facteur de Puissance L1"
+    id: acrel_power_factor_l1
+    register_type: holding
+    address: 0x017C # Résolution 0.001
+    value_type: S_WORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    device_class: power_factor
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Facteur de Puissance L2"
+    id: acrel_power_factor_l2
+    register_type: holding
+    address: 0x017D
+    value_type: S_WORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    device_class: power_factor
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Facteur de Puissance L3"
+    id: acrel_power_factor_l3
+    register_type: holding
+    address: 0x017E
+    value_type: S_WORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    device_class: power_factor
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Facteur de Puissance Totale"
+    id: acrel_power_factor_total
+    register_type: holding
+    address: 0x017F # Résolution 0.001
+    value_type: S_WORD
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    device_class: power_factor
+    state_class: measurement
+
+  # --- ENERGIE ACTIVE ACREL (Import/Export, compteur total) ---
+  # Les 4 capteurs "internal" ci-dessous (spike/peak/flat/valley, tarifs horaires
+  # non utilisés ici) bridgent le trou entre 0x000A et 0x0014 pour que les deux
+  # compteurs import/export soient lus en 1 seule requête Modbus au lieu de 2.
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Active Importée"
+    id: acrel_energy_import
+    register_type: holding
+    address: 0x000A # Current forward active total energy, résolution 0.01kWh
+    value_type: U_DWORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée Pointe (non utilisé)"
+    id: acrel_energy_import_spike
+    internal: true
+    register_type: holding
+    address: 0x000C
+    value_type: U_DWORD
+    filters:
+      - multiply: 0.01
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée Pleine (non utilisé)"
+    id: acrel_energy_import_peak
+    internal: true
+    register_type: holding
+    address: 0x000E
+    value_type: U_DWORD
+    filters:
+      - multiply: 0.01
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée Normale (non utilisé)"
+    id: acrel_energy_import_flat
+    internal: true
+    register_type: holding
+    address: 0x0010
+    value_type: U_DWORD
+    filters:
+      - multiply: 0.01
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée Creuse (non utilisé)"
+    id: acrel_energy_import_valley
+    internal: true
+    register_type: holding
+    address: 0x0012
+    value_type: U_DWORD
+    filters:
+      - multiply: 0.01
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Active Exportée"
+    id: acrel_energy_export
+    register_type: holding
+    address: 0x0014 # Current reversing active total energy, résolution 0.01kWh
+    value_type: U_DWORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+
+  # --- ENERGIE PAR PHASE ACREL (L1/L2/L3, même bloc registre 0x0087-0x008B) ---
+  # L2 = circuit dédié EVSE. L1/L3 ajoutés pour bridger le bloc en 1 seule requête
+  # (gain marginal, mais donne aussi la donnée par phase gratuitement).
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée L1"
+    id: acrel_energy_import_l1
+    register_type: holding
+    address: 0x0087 # Forward active energy of A phase
+    value_type: U_DWORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée L2 (EV)"
+    id: acrel_energy_import_l2
+    register_type: holding
+    address: 0x0089 # Forward active energy of B phase (même canal que Courant/Puissance L2)
+    value_type: U_DWORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: modbus_controller
+    modbus_controller_id: acrel_adl400
+    name: "Acrel Energie Importée L3"
+    id: acrel_energy_import_l3
+    register_type: holding
+    address: 0x008B # Forward active energy of C phase
+    value_type: U_DWORD
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+
+  # --- ENERGIE LINKY ---
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "EAST"
+    name: "Linky Index Consommation"
+    unit_of_measurement: "Wh"
+    icon: mdi:gauge
+    device_class: energy
+    state_class: total_increasing
+
+# --- TEXT SENSOR POUR LE LINKY (Déclenchement HC/HP) ---
+
+text_sensor:
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "LTARF" # Optionnel : remonte le nom du tarif en cours ("HEURE CREUSE", "HEURE PLEINE"...)
+    name: "Linky Tarif en cours"
+
+# =====================================================================
+# 4. BOUCLE D'ENVOI API VERS LE SMARTEVSE (Toutes les 3s)
+# =====================================================================
+
+interval:
+  - interval: 3s # comme le script Berry : moins fréquent = moins de blocages, largement sous le timeout 11s de SmartEVSE
+    id: smartevse_feed
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(acrel_current_l1).has_state() &&
+                     id(acrel_current_l2).has_state() &&
+                     id(acrel_current_l3).has_state() &&
+                     id(acrel_active_power_l2).has_state() &&
+                     id(acrel_energy_import_l2).has_state();
+          then:
+            # --- CALCULS ---
+            - lambda: |-
+                float l1 = id(acrel_current_l1).state;
+                float l2 = id(acrel_current_l2).state;
+                float l3 = id(acrel_current_l3).state;
+
+                // Maison globale = L1 + L2 + L3 (car tout est en mono)
+                float mains_total = l1 + l2 + l3;
+
+                id(smartevse_mains_da) = (int)(mains_total * 10.0);
+                id(smartevse_ev_da) = (int)(l2 * 10.0);
+
+                // Puissance/énergie EV : canal L2/Phase B = circuit dédié EVSE.
+                // /ev_meter n'actualise import_active_power/energy que si les 3 paramètres
+                // (import_active_power, import_active_energy, export_active_energy) sont
+                // envoyés ensemble (cf. http_handlers.cpp du fork basmeerman) ; L1/L2/L3
+                // seuls ne mettent à jour que les courants, pas la puissance/énergie affichée.
+                id(smartevse_ev_power_w) = (int)(id(acrel_active_power_l2).state * 1000.0);
+                id(smartevse_ev_energy_wh) = (int)(id(acrel_energy_import_l2).state * 1000.0);
+
+            # --- ENVOI MAINS METER (Réseau global simulé sur L1) ---
+            - http_request.post:
+                url: !lambda |-
+                  return "http://192.168.1.23/currents?L1=" + to_string(id(smartevse_mains_da)) + "&L2=0&L3=0";
+                on_response:
+                  then:
+                    - if:
+                        condition:
+                          lambda: 'return response->status_code == 200;'
+                        then:
+                          - logger.log:
+                              format: "SmartEVSE currents sent OK: L1=%d"
+                              args: [id(smartevse_mains_da)]
+                        else:
+                          - logger.log:
+                              format: "SmartEVSE currents POST FAILED, status=%d"
+                              args: [response->status_code]
+                on_error:
+                  then:
+                    - logger.log: "SmartEVSE currents POST FAILED, status=connection error"
+
+            # --- ENVOI EV METER (POST /ev_meter, cf. docs/REST_API.md du fork basmeerman) ---
+            # Nécessite EVMeter = "API" dans la config SmartEVSE. L1/L2/L3 doivent être
+            # envoyés ensemble ; installation mono donc tout est porté sur L1 (comme pour /currents).
+            # import_active_power/import_active_energy/export_active_energy doivent AUSSI être
+            # envoyés ensemble (les 3), sinon SmartEVSE n'actualise ni la puissance ni l'énergie
+            # affichées, même si les courants sont bien reçus. export=0 (pas de V2G ici).
+            - http_request.post:
+                url: !lambda |-
+                  return "http://192.168.1.23/ev_meter?L1=" + to_string(id(smartevse_ev_da)) +
+                         "&L2=0&L3=0" +
+                         "&import_active_power=" + to_string(id(smartevse_ev_power_w)) +
+                         "&import_active_energy=" + to_string(id(smartevse_ev_energy_wh)) +
+                         "&export_active_energy=0";
+                on_response:
+                  then:
+                    - if:
+                        condition:
+                          lambda: 'return response->status_code == 200;'
+                        then:
+                          - logger.log:
+                              format: "SmartEVSE ev_meter sent OK: L1=%d P=%dW E=%dWh"
+                              args: [id(smartevse_ev_da), id(smartevse_ev_power_w), id(smartevse_ev_energy_wh)]
+                        else:
+                          - logger.log:
+                              format: "SmartEVSE ev_meter POST FAILED, status=%d"
+                              args: [response->status_code]
+                on_error:
+                  then:
+                    - logger.log: "SmartEVSE ev_meter POST FAILED, status=connection error"
+
+logger:
+  level: DEBUG
+
+debug:
