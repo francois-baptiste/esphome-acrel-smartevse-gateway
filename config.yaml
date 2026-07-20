@@ -5,6 +5,15 @@ esp32:
   board: esp32-s3-devkitc-1
   framework:
     type: esp-idf  # Essentiel pour la stabilité de l'UART/Modbus sur l'ESP32-S3
+    # Épinglé (au lieu du "recommended" 5.5.4) : le mécanisme de "response
+    # files" du toolchain CMake de 5.5.4 génère des fichiers
+    # cflags/cxxflags/asmflags/ldflags vides plutôt que peuplés (bug
+    # d'amorçage CMake/IDF), provoquant des "dangerous relocation: call8"
+    # au link faute des flags d'architecture (-mlongcalls etc.).
+    # 5.3.5 s'est avéré trop ancien (wifi_scan_config_t.coex_background_scan
+    # manquant, requis par le composant wifi de cette version d'ESPHome).
+    # 5.4.4 = compromis : assez récent pour l'API wifi, sans le bug 5.5.x.
+    version: "5.4.4"
 
 wifi:
   ssid: !secret wifi_ssid
@@ -21,15 +30,20 @@ web_server:
   port: 80
 
 # =====================================================================
-# VARIABLES ET CLIENT HTTP POUR LE SMARTEVSE
+# CLIENT MQTT POUR LE SMARTEVSE (remplace les POST HTTP /currents et /ev_meter)
 # =====================================================================
-
-http_request:
-  id: smartevse_http
-  # 300ms d'origine causait ~40-50% d'échecs "connection error" une fois le polling
-  # Modbus accéléré (plus de charge UART/CPU laisse moins de marge au stack WiFi).
-  # 1000ms reste largement sous le timeout de communication SmartEVSE (11s).
-  timeout: 1000ms
+# SmartEVSE (fork basmeerman) est déjà connecté à ce broker (cf. /settings ->
+# mqtt.host) et son firmware sait consommer les topics Set/MainsMeter et
+# Set/EVMeter (mqtt_parser.c). Le publish MQTT (petit payload, pas de
+# handshake TCP+HTTP par cycle) est bien plus léger que le POST HTTP toutes
+# les 3s, surtout ce broker étant sur Internet (pas sur le LAN local).
+# topic_prefix "SmartEVSE/8931" = celui vu dans /settings au moment du
+# déploiement ; à corriger si l'utilisateur change ce réglage côté SmartEVSE.
+mqtt:
+  id: smartevse_mqtt
+  broker: "37.187.129.84"
+  port: 1883
+  discovery: false # on ne veut pas que ce client MQTT auto-publie/-découvre nos capteurs Acrel/Linky
 
 globals:
   - id: smartevse_mains_da
@@ -582,7 +596,8 @@ interval:
                      id(acrel_current_l2).has_state() &&
                      id(acrel_current_l3).has_state() &&
                      id(acrel_active_power_l2).has_state() &&
-                     id(acrel_energy_import_l2).has_state();
+                     id(acrel_energy_import_l2).has_state() &&
+                     id(smartevse_mqtt).is_connected();
           then:
             # --- CALCULS ---
             - lambda: |-
@@ -605,55 +620,32 @@ interval:
                 id(smartevse_ev_energy_wh) = (int)(id(acrel_energy_import_l2).state * 1000.0);
 
             # --- ENVOI MAINS METER (Réseau global simulé sur L1) ---
-            - http_request.post:
-                url: !lambda |-
-                  return "http://192.168.1.23/currents?L1=" + to_string(id(smartevse_mains_da)) + "&L2=0&L3=0";
-                on_response:
-                  then:
-                    - if:
-                        condition:
-                          lambda: 'return response->status_code == 200;'
-                        then:
-                          - logger.log:
-                              format: "SmartEVSE currents sent OK: L1=%d"
-                              args: [id(smartevse_mains_da)]
-                        else:
-                          - logger.log:
-                              format: "SmartEVSE currents POST FAILED, status=%d"
-                              args: [response->status_code]
-                on_error:
-                  then:
-                    - logger.log: "SmartEVSE currents POST FAILED, status=connection error"
+            # Format payload = mqtt_parse_mains_meter() du fork basmeerman : "L1:L2:L3" en dA.
+            - mqtt.publish:
+                topic: "SmartEVSE/8931/Set/MainsMeter"
+                payload: !lambda |-
+                  return to_string(id(smartevse_mains_da)) + ":0:0";
+                qos: 1
 
-            # --- ENVOI EV METER (POST /ev_meter, cf. docs/REST_API.md du fork basmeerman) ---
-            # Nécessite EVMeter = "API" dans la config SmartEVSE. L1/L2/L3 doivent être
-            # envoyés ensemble ; installation mono donc tout est porté sur L1 (comme pour /currents).
-            # import_active_power/import_active_energy/export_active_energy doivent AUSSI être
-            # envoyés ensemble (les 3), sinon SmartEVSE n'actualise ni la puissance ni l'énergie
-            # affichées, même si les courants sont bien reçus. export=0 (pas de V2G ici).
-            - http_request.post:
-                url: !lambda |-
-                  return "http://192.168.1.23/ev_meter?L1=" + to_string(id(smartevse_ev_da)) +
-                         "&L2=0&L3=0" +
-                         "&import_active_power=" + to_string(id(smartevse_ev_power_w)) +
-                         "&import_active_energy=" + to_string(id(smartevse_ev_energy_wh)) +
-                         "&export_active_energy=0";
-                on_response:
-                  then:
-                    - if:
-                        condition:
-                          lambda: 'return response->status_code == 200;'
-                        then:
-                          - logger.log:
-                              format: "SmartEVSE ev_meter sent OK: L1=%d P=%dW E=%dWh"
-                              args: [id(smartevse_ev_da), id(smartevse_ev_power_w), id(smartevse_ev_energy_wh)]
-                        else:
-                          - logger.log:
-                              format: "SmartEVSE ev_meter POST FAILED, status=%d"
-                              args: [response->status_code]
-                on_error:
-                  then:
-                    - logger.log: "SmartEVSE ev_meter POST FAILED, status=connection error"
+            - logger.log:
+                format: "SmartEVSE MQTT MainsMeter published: L1=%d"
+                args: [id(smartevse_mains_da)]
+
+            # --- ENVOI EV METER (topic Set/EVMeter, cf. mqtt_parser.c du fork basmeerman) ---
+            # Nécessite EVMeter = "API" dans la config SmartEVSE. Format payload = "L1:L2:L3:W:Wh"
+            # en un seul message (contrairement au REST /ev_meter, pas besoin d'envoyer les 5
+            # paramètres séparément ni de les grouper en 2 lots).
+            - mqtt.publish:
+                topic: "SmartEVSE/8931/Set/EVMeter"
+                payload: !lambda |-
+                  return to_string(id(smartevse_ev_da)) + ":0:0:" +
+                         to_string(id(smartevse_ev_power_w)) + ":" +
+                         to_string(id(smartevse_ev_energy_wh));
+                qos: 1
+
+            - logger.log:
+                format: "SmartEVSE MQTT EVMeter published: L1=%d P=%dW E=%dWh"
+                args: [id(smartevse_ev_da), id(smartevse_ev_power_w), id(smartevse_ev_energy_wh)]
 
 logger:
   level: DEBUG
