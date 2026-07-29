@@ -81,10 +81,19 @@ uart:
 
   # Port B : Pour la Téléinfo (Connecteur SH1.0)
   - id: teleinfo_uart
+    # GPIO2 = pin data documentée par le wiki Waveshare pour le connecteur
+    # SH1.0 (GND/3V3/GPIO2/GPIO1). GPIO1, GPIO11 et GPIO12 testés en
+    # diagnostic sans succès (0 octet reçu sur les 4) : le problème n'est
+    # plus une histoire de mapping de pin, cf. investigation matérielle.
     rx_pin: GPIO2
     baud_rate: 9600
-    data_bits: 8
-    parity: NONE
+    # La trame TIC (Historique ET Standard) est toujours 7E1 (7 bits + parité
+    # paire), seul le débit change entre les deux modes (1200 vs 9600 bauds).
+    # 8N1 laissait le composant teleinfo lever "Invalid number of data bits"
+    # / "Invalid parity" au boot et aucune trame n'était décodée (bit de parité
+    # mal interprété comme 8e bit de données -> désynchronisation de trame).
+    data_bits: 7
+    parity: EVEN
     stop_bits: 1
 
 # =====================================================================
