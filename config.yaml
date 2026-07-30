@@ -585,6 +585,9 @@ sensor:
   # Index par cadran tarifaire (contrat HC/HP, cf. "Linky Tarif en cours" qui
   # bascule entre HEURE CREUSE/HEURE PLEINE) : EASF01 = index Heures Creuses,
   # EASF02 = index Heures Pleines. EAST ci-dessus reste le total des deux.
+  # EASF01+EASF02 ne collait pas exactement à EAST sur le terrain (écart
+  # ~84.6kWh) -> EASF03/EASF04 ajoutés pour vérifier si le calendrier
+  # fournisseur (cf. NGTF ci-dessous) a plus de 2 cadrans que HC/HP simple.
   - platform: teleinfo
     teleinfo_id: linky_tic
     tag_name: "EASF01"
@@ -600,6 +603,24 @@ sensor:
     name: "Linky Index Heures Pleines"
     unit_of_measurement: "Wh"
     icon: mdi:weather-sunny
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "EASF03"
+    name: "Linky Index Cadran 3"
+    unit_of_measurement: "Wh"
+    icon: mdi:weather-partly-cloudy
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "EASF04"
+    name: "Linky Index Cadran 4"
+    unit_of_measurement: "Wh"
+    icon: mdi:weather-partly-cloudy
     device_class: energy
     state_class: total_increasing
 
@@ -667,6 +688,14 @@ text_sensor:
     teleinfo_id: linky_tic
     tag_name: "LTARF" # Optionnel : remonte le nom du tarif en cours ("HEURE CREUSE", "HEURE PLEINE"...)
     name: "Linky Tarif en cours"
+
+  # Nom du calendrier tarifaire fournisseur (ex: "HC/HP", "BASE", "TEMPO"...) :
+  # permet de savoir combien de cadrans EASFxx sont réellement utilisés par
+  # le contrat, pour expliquer l'écart EASF01+EASF02 != EAST observé sur site.
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "NGTF"
+    name: "Linky Calendrier Tarifaire"
 
   # STGE = registre de statuts du Linky (8 hex = 32 bits), tag numérique au sens
   # TIC mais pas une grandeur décimale -> passe par text_sensor (teleinfo.sensor
