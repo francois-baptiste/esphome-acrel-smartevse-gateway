@@ -62,6 +62,14 @@ globals:
     type: int
     initial_value: '0'
 
+  - id: smartevse_linky_is_hp
+    type: int
+    initial_value: '0'
+
+  - id: smartevse_linky_is_hc
+    type: int
+    initial_value: '0'
+
 # =====================================================================
 # 1. DECLARATION DES DEUX PORTS SERIE (UART) WAVESHARE
 # =====================================================================
@@ -577,6 +585,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "EAST"
     name: "Linky Index Consommation"
+    id: linky_east
     unit_of_measurement: "Wh"
     icon: mdi:gauge
     device_class: energy
@@ -592,6 +601,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "EASF01"
     name: "Linky Index Heures Creuses"
+    id: linky_easf01
     unit_of_measurement: "Wh"
     icon: mdi:weather-night
     device_class: energy
@@ -601,6 +611,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "EASF02"
     name: "Linky Index Heures Pleines"
+    id: linky_easf02
     unit_of_measurement: "Wh"
     icon: mdi:weather-sunny
     device_class: energy
@@ -630,6 +641,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "URMS1"
     name: "Linky Tension"
+    id: linky_urms1
     unit_of_measurement: "V"
     accuracy_decimals: 0
     icon: mdi:sine-wave
@@ -640,6 +652,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "IRMS1"
     name: "Linky Courant"
+    id: linky_irms1
     unit_of_measurement: "A"
     accuracy_decimals: 0
     icon: mdi:current-ac
@@ -650,6 +663,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "SINSTS"
     name: "Linky Puissance Apparente Instantanée"
+    id: linky_sinsts
     unit_of_measurement: "VA"
     accuracy_decimals: 0
     icon: mdi:flash
@@ -674,6 +688,7 @@ sensor:
     teleinfo_id: linky_tic
     tag_name: "PREF"
     name: "Linky Puissance de Référence Souscrite"
+    id: linky_pref
     unit_of_measurement: "kVA"
     accuracy_decimals: 0
     icon: mdi:flash-outline
@@ -688,6 +703,7 @@ text_sensor:
     teleinfo_id: linky_tic
     tag_name: "LTARF" # Optionnel : remonte le nom du tarif en cours ("HEURE CREUSE", "HEURE PLEINE"...)
     name: "Linky Tarif en cours"
+    id: linky_ltarf
 
   # Nom du calendrier tarifaire fournisseur (ex: "HC/HP", "BASE", "TEMPO"...) :
   # permet de savoir combien de cadrans EASFxx sont réellement utilisés par
@@ -801,6 +817,75 @@ interval:
             - logger.log:
                 format: "SmartEVSE MQTT EVMeter published: L1=%d P=%dW E=%dWh"
                 args: [id(smartevse_ev_da), id(smartevse_ev_power_w), id(smartevse_ev_energy_wh)]
+
+# =====================================================================
+# 5. BOUCLE D'ENVOI TELEMETRIE LINKY VERS LE SMARTEVSE (Toutes les 10s)
+# =====================================================================
+# Le fork basmeerman ne peuple MainsMeter.linky.* (tarif HP/HC, tension,
+# courant, puissance apparente, index d'énergie) que via une lecture Modbus
+# directe (registres 500/600, cf. tic-din-modbus) OU, depuis l'ajout du topic
+# /Set/LinkyMeter (mqtt_parser.c), via ce flux MQTT. Sans ce bloc, le badge
+# "Linky" de l'UI SmartEVSE reste bloqué sur "No signal (meter unavailable)"
+# même si le mains meter (Acrel, ci-dessus) fonctionne : ce sont deux flux
+# indépendants côté SmartEVSE (MainsMeter.Type=API pour les courants, Linky
+# séparément pour le tarif/la tension/l'énergie).
+# Cadence 10s (au lieu de 3s comme la boucle mains/EV) : le staleness timeout
+# côté SmartEVSE est de 300s (LINKY_MQTT_STALE_TIMEOUT_S), et le tarif HP/HC
+# ne change de toute façon qu'une à deux fois par jour.
+# Payload = mqtt_parse_linky_meter() du fork basmeerman :
+# "is_hp:is_hc:is_power_overflow:voltage_l1:current_l1:apparent_power:
+#  active_energy_total:contracted_power:total_hp:total_hc"
+# (2e entrée de la liste "interval" déclarée section 4 : ESPHome interdit une
+# 2e clé top-level "interval:", donc ceci prolonge la même liste YAML.)
+  - interval: 10s
+    id: smartevse_linky_feed
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(linky_ltarf).has_state() &&
+                     id(linky_urms1).has_state() &&
+                     id(linky_irms1).has_state() &&
+                     id(linky_sinsts).has_state() &&
+                     id(linky_east).has_state() &&
+                     id(linky_pref).has_state() &&
+                     id(linky_easf01).has_state() &&
+                     id(linky_easf02).has_state() &&
+                     id(smartevse_mqtt).is_connected();
+          then:
+            # --- CALCULS ---
+            # Contrat HC/HP (cf. NGTF="H PLEINE/CREUSE") : LTARF vaut "HEURE
+            # PLEINE"/"HEURE CREUSE" en mode Standard. Pas de gestion Tempo/BASE
+            # ici (hors périmètre du contrat installé) -> is_hp=is_hc=0 dans ces
+            # cas, comme le ferait un flux Modbus tic-din-modbus absent.
+            - lambda: |-
+                std::string tarf = id(linky_ltarf).state;
+                id(smartevse_linky_is_hp) = (tarf.find("PLEINE") != std::string::npos) ? 1 : 0;
+                id(smartevse_linky_is_hc) = (tarf.find("CREUSE") != std::string::npos) ? 1 : 0;
+
+            # --- ENVOI LINKY METER (topic Set/LinkyMeter, cf. mqtt_parser.c du fork basmeerman) ---
+            # Format payload = mqtt_parse_linky_meter() : "is_hp:is_hc:is_power_overflow:
+            # voltage_l1:current_l1:apparent_power:active_energy_total:contracted_power:
+            # total_hp:total_hc" en un seul message.
+            - mqtt.publish:
+                topic: "SmartEVSE/8931/Set/LinkyMeter"
+                payload: !lambda |-
+                  int overflow = id(linky_depassement_puissance).state ? 1 : 0;
+                  return to_string(id(smartevse_linky_is_hp)) + ":" +
+                         to_string(id(smartevse_linky_is_hc)) + ":" +
+                         to_string(overflow) + ":" +
+                         to_string(id(linky_urms1).state) + ":" +
+                         to_string(id(linky_irms1).state) + ":" +
+                         to_string(id(linky_sinsts).state) + ":" +
+                         to_string(id(linky_east).state) + ":" +
+                         to_string(id(linky_pref).state) + ":" +
+                         to_string(id(linky_easf02).state) + ":" +
+                         to_string(id(linky_easf01).state);
+                qos: 1
+
+            - logger.log:
+                format: "SmartEVSE MQTT LinkyMeter published: is_hp=%d is_hc=%d"
+                args: [id(smartevse_linky_is_hp), id(smartevse_linky_is_hc)]
 
 logger:
   level: DEBUG
