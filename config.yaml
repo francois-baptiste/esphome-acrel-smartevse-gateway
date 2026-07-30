@@ -582,6 +582,84 @@ sensor:
     device_class: energy
     state_class: total_increasing
 
+  # Index par cadran tarifaire (contrat HC/HP, cf. "Linky Tarif en cours" qui
+  # bascule entre HEURE CREUSE/HEURE PLEINE) : EASF01 = index Heures Creuses,
+  # EASF02 = index Heures Pleines. EAST ci-dessus reste le total des deux.
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "EASF01"
+    name: "Linky Index Heures Creuses"
+    unit_of_measurement: "Wh"
+    icon: mdi:weather-night
+    device_class: energy
+    state_class: total_increasing
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "EASF02"
+    name: "Linky Index Heures Pleines"
+    unit_of_measurement: "Wh"
+    icon: mdi:weather-sunny
+    device_class: energy
+    state_class: total_increasing
+
+  # --- TENSION / COURANT / PUISSANCE INSTANTANES LINKY (installation monophasée) ---
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "URMS1"
+    name: "Linky Tension"
+    unit_of_measurement: "V"
+    accuracy_decimals: 0
+    icon: mdi:sine-wave
+    device_class: voltage
+    state_class: measurement
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "IRMS1"
+    name: "Linky Courant"
+    unit_of_measurement: "A"
+    accuracy_decimals: 0
+    icon: mdi:current-ac
+    device_class: current
+    state_class: measurement
+
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "SINSTS"
+    name: "Linky Puissance Apparente Instantanée"
+    unit_of_measurement: "VA"
+    accuracy_decimals: 0
+    icon: mdi:flash
+    device_class: apparent_power
+    state_class: measurement
+
+  # Max du jour (remis à zéro à minuit côté compteur), à comparer à PREF pour
+  # contextualiser "Linky Dépassement Puissance Référence" (cf. décodage STGE).
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "SMAXSN"
+    name: "Linky Puissance Apparente Max du Jour"
+    unit_of_measurement: "VA"
+    accuracy_decimals: 0
+    icon: mdi:flash-alert
+    device_class: apparent_power
+    state_class: measurement
+
+  # Puissance de référence souscrite auprès du fournisseur (kVA) : le seuil
+  # dont le dépassement est signalé par le bit 7 de STGE.
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "PREF"
+    name: "Linky Puissance de Référence Souscrite"
+    unit_of_measurement: "kVA"
+    accuracy_decimals: 0
+    icon: mdi:flash-outline
+    device_class: apparent_power
+    state_class: measurement
+    entity_category: diagnostic
+
 # --- TEXT SENSOR POUR LE LINKY (Déclenchement HC/HP) ---
 
 text_sensor:
