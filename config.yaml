@@ -590,6 +590,45 @@ text_sensor:
     tag_name: "LTARF" # Optionnel : remonte le nom du tarif en cours ("HEURE CREUSE", "HEURE PLEINE"...)
     name: "Linky Tarif en cours"
 
+  # STGE = registre de statuts du Linky (8 hex = 32 bits), tag numérique au sens
+  # TIC mais pas une grandeur décimale -> passe par text_sensor (teleinfo.sensor
+  # fait un parse_number<float> qui échouerait sur du hex). Décodé bit à bit
+  # ci-dessous vers des binary_sensor à chaque nouvelle valeur (cf. Enedis-NOI-CPT_54E) :
+  # bit 6 = surtension sur une des phases, bit 7 = dépassement de puissance de référence.
+  - platform: teleinfo
+    teleinfo_id: linky_tic
+    tag_name: "STGE"
+    name: "Linky Registre de Statuts (brut)"
+    id: linky_stge
+    icon: mdi:information-outline
+    on_value:
+      then:
+        - lambda: |-
+            uint32_t stge = strtoul(x.c_str(), nullptr, 16);
+            id(linky_depassement_puissance).publish_state((stge & (1u << 7)) != 0);
+            id(linky_surtension).publish_state((stge & (1u << 6)) != 0);
+        # Log explicite (indépendant du binary_sensor) : BinarySensor n'émet pas
+        # d'évènement d'état/API au tout premier publish_state() du boot (évite
+        # de déclencher les automatisations sur l'état par défaut), donc sans ce
+        # log la toute première valeur ne serait jamais visible dans "esphome logs".
+        - logger.log:
+            format: "Linky STGE=%s -> dépassement puissance=%d, surtension=%d"
+            args:
+              - x.c_str()
+              - id(linky_depassement_puissance).state
+              - id(linky_surtension).state
+
+binary_sensor:
+  - platform: template
+    id: linky_depassement_puissance
+    name: "Linky Dépassement Puissance Référence"
+    device_class: problem
+
+  - platform: template
+    id: linky_surtension
+    name: "Linky Surtension"
+    device_class: problem
+
 # =====================================================================
 # 4. BOUCLE D'ENVOI API VERS LE SMARTEVSE (Toutes les 3s)
 # =====================================================================
