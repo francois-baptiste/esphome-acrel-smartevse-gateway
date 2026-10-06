@@ -70,6 +70,23 @@ globals:
     type: int
     initial_value: '0'
 
+  # --- Etat de la boucle DLB ETEK (cf. section 6) ---
+  - id: etek_dlb_last_current_a
+    type: int
+    initial_value: '-1' # dernier courant (A) réellement écrit en registre 109 ; -1 = jamais écrit
+
+  - id: etek_dlb_enabled
+    type: int
+    initial_value: '-1' # dernière valeur connue du registre 89 (0=actif, 2=pause) ; -1 = inconnu, force une écriture au 1er cycle
+
+  - id: etek_dlb_pending_target_a
+    type: int
+    initial_value: '0' # cible en hausse en attente de confirmation (anti-oscillation, cf. section 6)
+
+  - id: etek_dlb_pending_count
+    type: int
+    initial_value: '0'
+
 # =====================================================================
 # 1. DECLARATION DES DEUX PORTS SERIE (UART) WAVESHARE
 # =====================================================================
@@ -79,6 +96,9 @@ uart:
     tx_pin: GPIO17
     rx_pin: GPIO18
     # tx_enable_pin retiré d'ici ! (piloté par modbus: flow_control_pin)
+    # 9600 : l'ETEK EKEPC2-C ne répond en réalité qu'à 9600 (confirmé par test
+    # direct PC/USB-RS485), malgré le manuel constructeur qui annonce 38400,n,8,1
+    # fixe. L'Acrel a été reconfiguré en conséquence pour rester sur le même bus.
     baud_rate: 9600
     data_bits: 8
     # L'ADL400 Acrel sort d'usine en 8N1 (parité NONE). EVEN empêchait
@@ -120,10 +140,58 @@ modbus_controller:
   - id: acrel_adl400
     address: 0x0B
     modbus_id: modbus_bus
-    # Défaut ESPHome = 60s. Avec turnaround_time réduit, un cycle complet tient dans ~1.5-2s,
-    # donc on peut repasser le compteur à 3s pour que la boucle d'envoi SmartEVSE ait des
-    # données fraîches à chaque itération plutôt que de renvoyer une valeur périmée.
-    update_interval: 3s
+    # Défaut ESPHome = 60s. Remonté à 2s pour des données plus fraîches ; le bus est
+    # maintenant à 9600 (au lieu de 38400) pour rester compatible avec l'ETEK, donc
+    # chaque octet prend 4x plus de temps qu'avant -> si des timeouts/"Duplicate
+    # modbus command" apparaissent dans les logs, redescendre cette valeur.
+    update_interval: 2s
+
+  # ETEK EKEPC2-C : adresse Modbus fixée à 100 (0x64) via écriture registre 100
+  # ("Device address number") depuis un adaptateur USB-RS485 externe, en remplacement
+  # de l'adresse de diffusion 255 sortie d'usine. Bus confirmé fonctionnel à 9600,n,8,1.
+  - id: etek_epc2
+    address: 0x64
+    modbus_id: modbus_bus
+    update_interval: 2s
+
+# Cibles d'écriture Modbus pour le plafonnement de courant ETEK (boucle DLB, section 6).
+# Registre 109 ("Maximum output PWM duty cycle of charging pile", lecture/écriture) :
+# facteur d'échelle = ampères * 167, confirmé par un autre utilisateur EKEPC2 sur
+# evcc-io/evcc#18550 (config Home Assistant équivalente), PAS calibré indépendamment
+# sur ce firmware précis. Utilisé tel quel à la demande explicite de l'utilisateur
+# (skip calibration matérielle) -> comparer la cible loggée par la boucle DLB à
+# etek_epc2_current (registre 146) sur les premières sessions de charge réelles pour
+# confirmer/corriger ce facteur.
+# Registre 89 : écrit par la boucle DLB pour mettre en pause (2) ou réactiver (0) la
+# charge quand le courant disponible tombe sous le plancher IEC 61851 (6A) ; même
+# source evcc-io/evcc#18550, également non confirmé indépendamment.
+# Ces deux entités "number" restent exposées (Web UI/API) pour override manuel/debug ;
+# la valeur brute (pas l'ampérage) est ce qui est stocké/affiché, volontairement sans
+# filtre "multiply" pour ne pas masquer la valeur réellement écrite sur le bus.
+number:
+  - platform: modbus_controller
+    modbus_controller_id: etek_epc2
+    name: "ETEK EPC2 Registre 109 (courant max, brut = A x 167)"
+    id: etek_epc2_reg109
+    register_type: holding
+    address: 109
+    value_type: U_WORD
+    min_value: 0
+    max_value: 6000
+    step: 1
+    mode: box
+
+  - platform: modbus_controller
+    modbus_controller_id: etek_epc2
+    name: "ETEK EPC2 Registre 89 (activation : 0=actif, 2=pause)"
+    id: etek_epc2_reg89
+    register_type: holding
+    address: 89
+    value_type: U_WORD
+    min_value: 0
+    max_value: 2
+    step: 2
+    mode: box
 
 teleinfo:
   id: linky_tic
@@ -135,6 +203,55 @@ teleinfo:
 # =====================================================================
 
 sensor:
+  # --- ETEK EKEPC2-C (registres documentés Usage-Manual-for-EKEPC2-C-S.pdf p.26-27) ---
+
+  - platform: modbus_controller
+    modbus_controller_id: etek_epc2
+    name: "ETEK EPC2 Statut"
+    id: etek_epc2_status
+    register_type: holding
+    address: 141 # "Current working status", codes 0-13 (cf. table LED p.14 pour la correspondance)
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    modbus_controller_id: etek_epc2
+    name: "ETEK EPC2 Courant de charge"
+    id: etek_epc2_current
+    register_type: holding
+    address: 146 # "Current value of charging pile 0-200.0A"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    unit_of_measurement: "A"
+    device_class: current
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: etek_epc2
+    name: "ETEK EPC2 Tension"
+    id: etek_epc2_voltage
+    register_type: holding
+    address: 148 # "Current voltage value of charging pile 0-500.0V"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: etek_epc2
+    name: "ETEK EPC2 Puissance"
+    id: etek_epc2_power
+    register_type: holding
+    address: 149 # "Current power value of charging pile 0-22000W"
+    value_type: U_WORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+
   # --- COURANTS ACREL (Pour le calcul Monophasé) ---
 
   - platform: modbus_controller
@@ -886,6 +1003,109 @@ interval:
             - logger.log:
                 format: "SmartEVSE MQTT LinkyMeter published: is_hp=%d is_hc=%d"
                 args: [id(smartevse_linky_is_hp), id(smartevse_linky_is_hc)]
+
+# =====================================================================
+# 6. BOUCLE DLB (DYNAMIC LOAD BALANCING) ETEK (Toutes les 5s)
+# =====================================================================
+# Plafonne le courant de charge ETEK (écriture registre 109, cf. section "number"
+# ci-dessus) pour que le courant total maison (Acrel L1+L2+L3) ne dépasse jamais la
+# puissance souscrite Linky (PREF), avec une marge de sécurité. Le courant "disponible"
+# pour l'EV = PREF converti en ampères (via la tension Linky mesurée en direct) moins ce
+# que tirent déjà les deux autres circuits (L1+L3, hors EV = L2).
+#
+# Cadence 5s : assez réactif face à un gros appel de puissance sur L1/L3, sans saturer
+# le bus 9600 bauds déjà partagé avec les lectures Acrel (2s) et ETEK (2s).
+#
+# IEC 61851-1 : pas de courant de charge < 6A -> en dessous, on met en pause (registre
+# 89 = 2) plutôt que d'envoyer une valeur hors norme.
+#
+# Anti-oscillation : une BAISSE de courant est appliquée immédiatement (priorité à la
+# sécurité du disjoncteur en cas de gros appel soudain sur un autre circuit) ; une
+# HAUSSE doit être confirmée sur 3 cycles consécutifs (~15s) avant d'être écrite, pour
+# ne pas faire varier le courant de charge à chaque fluctuation transitoire.
+#
+# (3e entrée de la liste "interval" déclarée section 4 : ESPHome interdit une 2e clé
+# top-level "interval:", donc ceci prolonge la même liste YAML.)
+  - interval: 5s
+    id: etek_dlb
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(acrel_current_l1).has_state() &&
+                     id(acrel_current_l3).has_state() &&
+                     id(linky_pref).has_state() &&
+                     id(linky_urms1).has_state() &&
+                     id(linky_depassement_puissance).has_state();
+          then:
+            - lambda: |-
+                const int ETEK_MIN_A = 6;       // plancher IEC 61851
+                const int ETEK_MAX_A = 32;      // disjoncteur du circuit ETEK (Rangée L2)
+                const int REG109_SCALE = 167;   // cf. evcc-io/evcc#18550, non calibré indépendamment sur ce firmware
+                const float SAFETY_MARGIN_A = 2.0f;
+                const int CONFIRM_CYCLES = 3;   // ~15s à 5s/cycle
+
+                float non_ev_a = id(acrel_current_l1).state + id(acrel_current_l3).state;
+                float max_total_a = (id(linky_pref).state * 1000.0f) / id(linky_urms1).state;
+                float headroom_a = max_total_a - non_ev_a - SAFETY_MARGIN_A;
+
+                // Dépassement de puissance déjà signalé par le Linky (bit STGE) : coupe
+                // court, pas la peine d'attendre que le calcul normal rattrape la réalité.
+                if (id(linky_depassement_puissance).state) {
+                  headroom_a = 0.0f;
+                }
+
+                int target_a = (int)floorf(headroom_a); // floor = ne jamais arrondir au-dessus du réel disponible
+                if (target_a > ETEK_MAX_A) target_a = ETEK_MAX_A;
+                if (target_a < 0) target_a = 0;
+
+                bool should_pause = (target_a < ETEK_MIN_A);
+                int applied_a = should_pause ? 0 : target_a;
+
+                // --- Activation (registre 89) ---
+                int want_enabled = should_pause ? 2 : 0; // cf. evcc#18550 : 0=actif, 2=arrêt d'urgence
+                if (id(etek_dlb_enabled) != want_enabled) {
+                  id(etek_epc2_reg89).make_call().set_value(want_enabled).perform();
+                  id(etek_dlb_enabled) = want_enabled;
+                  ESP_LOGI("etek_dlb", "Registre 89 -> %d (%s)", want_enabled, should_pause ? "pause" : "actif");
+                }
+
+                if (should_pause) {
+                  id(etek_dlb_pending_count) = 0; // reset l'anti-oscillation pendant une pause
+                  ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA -> pause charge", headroom_a, ETEK_MIN_A);
+                } else {
+                  int last_a = id(etek_dlb_last_current_a);
+
+                  if (last_a < 0 || applied_a <= last_a) {
+                    // Première écriture, ou baisse : appliquée tout de suite (sécurité disjoncteur).
+                    if (applied_a != last_a) {
+                      id(etek_epc2_reg109).make_call().set_value(applied_a * REG109_SCALE).perform();
+                      id(etek_dlb_last_current_a) = applied_a;
+                      ESP_LOGI("etek_dlb", "DLB: cible=%dA (headroom=%.1fA) -> écrit reg109=%d",
+                               applied_a, headroom_a, applied_a * REG109_SCALE);
+                    }
+                    id(etek_dlb_pending_count) = 0;
+                  } else {
+                    // Hausse : exige confirmation sur CONFIRM_CYCLES cycles consécutifs identiques.
+                    if (applied_a == id(etek_dlb_pending_target_a)) {
+                      id(etek_dlb_pending_count) += 1;
+                    } else {
+                      id(etek_dlb_pending_target_a) = applied_a;
+                      id(etek_dlb_pending_count) = 1;
+                    }
+
+                    if (id(etek_dlb_pending_count) >= CONFIRM_CYCLES) {
+                      id(etek_epc2_reg109).make_call().set_value(applied_a * REG109_SCALE).perform();
+                      id(etek_dlb_last_current_a) = applied_a;
+                      id(etek_dlb_pending_count) = 0;
+                      ESP_LOGI("etek_dlb", "DLB: hausse confirmée=%dA (headroom=%.1fA) -> écrit reg109=%d",
+                               applied_a, headroom_a, applied_a * REG109_SCALE);
+                    } else {
+                      ESP_LOGD("etek_dlb", "DLB: hausse candidate=%dA (actuel=%dA), confirmation %d/%d",
+                               applied_a, last_a, id(etek_dlb_pending_count), CONFIRM_CYCLES);
+                    }
+                  }
+                }
 
 logger:
   level: DEBUG
