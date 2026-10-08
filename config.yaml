@@ -156,15 +156,20 @@ modbus_controller:
 
 # Cibles d'écriture Modbus pour le plafonnement de courant ETEK (boucle DLB, section 6).
 # Registre 109 ("Maximum output PWM duty cycle of charging pile", lecture/écriture) :
-# facteur d'échelle = ampères * 167, confirmé par un autre utilisateur EKEPC2 sur
-# evcc-io/evcc#18550 (config Home Assistant équivalente), PAS calibré indépendamment
-# sur ce firmware précis. Utilisé tel quel à la demande explicite de l'utilisateur
-# (skip calibration matérielle) -> comparer la cible loggée par la boucle DLB à
-# etek_epc2_current (registre 146) sur les premières sessions de charge réelles pour
-# confirmer/corriger ce facteur.
+# facteur d'échelle = ampères * 167 (source : evcc-io/evcc#18550). CONFIRMÉ sur ce
+# firmware le 2026-10-08 : cible loggée 16A (brut 2672) vs courant réellement mesuré
+# côté Acrel L2 (indépendant de l'ETEK) = 15.85-15.92A, écart <1%, cohérent avec le
+# bruit de mesure normal. Ne pas recalibrer sans raison.
+# ATTENTION : registre 146 ("ETEK EPC2 Courant de charge", cf. section sensor ci-dessous)
+# et les registres voisins 148/149 (tension/puissance) sont eux NON FIABLES sur ce
+# firmware -> ils affichent ~0 pendant que l'Acrel L2 mesure ~16A/234V/~3.7kW réels au
+# même instant. Ne pas s'y fier pour du diagnostic ou pour une future boucle de
+# feedback ; la boucle DLB n'en dépend pas (elle utilise Acrel + Linky), donc ce bug
+# ne l'affecte pas, mais les sensors eux-mêmes affichent des valeurs fausses dans l'UI.
 # Registre 89 : écrit par la boucle DLB pour mettre en pause (2) ou réactiver (0) la
 # charge quand le courant disponible tombe sous le plancher IEC 61851 (6A) ; même
-# source evcc-io/evcc#18550, également non confirmé indépendamment.
+# source evcc-io/evcc#18550, non vérifié indépendamment (nécessiterait de provoquer
+# un vrai dépassement de PREF), mais cohérent avec le comportement observé.
 # Ces deux entités "number" restent exposées (Web UI/API) pour override manuel/debug ;
 # la valeur brute (pas l'ampérage) est ce qui est stocké/affiché, volontairement sans
 # filtre "multiply" pour ne pas masquer la valeur réellement écrite sur le bus.
