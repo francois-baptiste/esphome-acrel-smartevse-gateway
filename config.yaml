@@ -29,48 +29,15 @@ ota:
 web_server:
   port: 80
 
-# =====================================================================
-# CLIENT MQTT POUR LE SMARTEVSE (remplace les POST HTTP /currents et /ev_meter)
-# =====================================================================
-# SmartEVSE (fork basmeerman) est déjà connecté à ce broker (cf. /settings ->
-# mqtt.host) et son firmware sait consommer les topics Set/MainsMeter et
-# Set/EVMeter (mqtt_parser.c). Le publish MQTT (petit payload, pas de
-# handshake TCP+HTTP par cycle) est bien plus léger que le POST HTTP toutes
-# les 3s, surtout ce broker étant sur Internet (pas sur le LAN local).
-# topic_prefix "SmartEVSE/8931" = celui vu dans /settings au moment du
-# déploiement ; à corriger si l'utilisateur change ce réglage côté SmartEVSE.
+# Broker MQTT : ESPHome y publie l'état de chaque entité sur
+# "<node_name>/<domain>/<object_id>/state" (consommé par Telegraf -> InfluxDB).
 mqtt:
-  id: smartevse_mqtt
   broker: "37.187.129.84"
   port: 1883
-  discovery: false # on ne veut pas que ce client MQTT auto-publie/-découvre nos capteurs Acrel/Linky
+  discovery: false # pas de découverte Home Assistant ; la publication des états reste active
 
 globals:
-  - id: smartevse_mains_da
-    type: int
-    initial_value: '0'
-
-  - id: smartevse_ev_da
-    type: int
-    initial_value: '0'
-
-  - id: smartevse_ev_power_w
-    type: int
-    initial_value: '0'
-
-  - id: smartevse_ev_energy_wh
-    type: int
-    initial_value: '0'
-
-  - id: smartevse_linky_is_hp
-    type: int
-    initial_value: '0'
-
-  - id: smartevse_linky_is_hc
-    type: int
-    initial_value: '0'
-
-  # --- Etat de la boucle DLB ETEK (cf. section 6) ---
+  # --- Etat de la boucle DLB ETEK (cf. section 4) ---
   - id: etek_dlb_last_current_a
     type: int
     initial_value: '-1' # dernier courant (A) réellement écrit en registre 109 ; -1 = jamais écrit
@@ -81,7 +48,7 @@ globals:
 
   - id: etek_dlb_pending_target_a
     type: int
-    initial_value: '0' # cible en hausse en attente de confirmation (anti-oscillation, cf. section 6)
+    initial_value: '0' # cible en hausse en attente de confirmation (anti-oscillation, cf. section 4)
 
   - id: etek_dlb_pending_count
     type: int
@@ -154,7 +121,7 @@ modbus_controller:
     modbus_id: modbus_bus
     update_interval: 2s
 
-# Cibles d'écriture Modbus pour le plafonnement de courant ETEK (boucle DLB, section 6).
+# Cibles d'écriture Modbus pour le plafonnement de courant ETEK (boucle DLB, section 4).
 # Registre 109 ("Maximum output PWM duty cycle of charging pile", lecture/écriture) :
 # facteur d'échelle = ampères * 167 (source : evcc-io/evcc#18550). CONFIRMÉ sur ce
 # firmware le 2026-10-08 : cible loggée 16A (brut 2672) vs courant réellement mesuré
@@ -875,142 +842,7 @@ binary_sensor:
     device_class: problem
 
 # =====================================================================
-# 4. BOUCLE D'ENVOI API VERS LE SMARTEVSE (Toutes les 3s)
-# =====================================================================
-
-interval:
-  - interval: 3s # comme le script Berry : moins fréquent = moins de blocages, largement sous le timeout 11s de SmartEVSE
-    id: smartevse_feed
-    then:
-      - if:
-          condition:
-            lambda: |-
-              return id(acrel_current_l1).has_state() &&
-                     id(acrel_current_l2).has_state() &&
-                     id(acrel_current_l3).has_state() &&
-                     id(acrel_active_power_l2).has_state() &&
-                     id(acrel_energy_import_l2).has_state() &&
-                     id(smartevse_mqtt).is_connected();
-          then:
-            # --- CALCULS ---
-            - lambda: |-
-                float l1 = id(acrel_current_l1).state;
-                float l2 = id(acrel_current_l2).state;
-                float l3 = id(acrel_current_l3).state;
-
-                // Maison globale = L1 + L2 + L3 (car tout est en mono)
-                float mains_total = l1 + l2 + l3;
-
-                id(smartevse_mains_da) = (int)(mains_total * 10.0);
-                id(smartevse_ev_da) = (int)(l2 * 10.0);
-
-                // Puissance/énergie EV : canal L2/Phase B = circuit dédié EVSE.
-                // /ev_meter n'actualise import_active_power/energy que si les 3 paramètres
-                // (import_active_power, import_active_energy, export_active_energy) sont
-                // envoyés ensemble (cf. http_handlers.cpp du fork basmeerman) ; L1/L2/L3
-                // seuls ne mettent à jour que les courants, pas la puissance/énergie affichée.
-                id(smartevse_ev_power_w) = (int)(id(acrel_active_power_l2).state * 1000.0);
-                id(smartevse_ev_energy_wh) = (int)(id(acrel_energy_import_l2).state * 1000.0);
-
-            # --- ENVOI MAINS METER (Réseau global simulé sur L1) ---
-            # Format payload = mqtt_parse_mains_meter() du fork basmeerman : "L1:L2:L3" en dA.
-            - mqtt.publish:
-                topic: "SmartEVSE/8931/Set/MainsMeter"
-                payload: !lambda |-
-                  return to_string(id(smartevse_mains_da)) + ":0:0";
-                qos: 1
-
-            - logger.log:
-                format: "SmartEVSE MQTT MainsMeter published: L1=%d"
-                args: [id(smartevse_mains_da)]
-
-            # --- ENVOI EV METER (topic Set/EVMeter, cf. mqtt_parser.c du fork basmeerman) ---
-            # Nécessite EVMeter = "API" dans la config SmartEVSE. Format payload = "L1:L2:L3:W:Wh"
-            # en un seul message (contrairement au REST /ev_meter, pas besoin d'envoyer les 5
-            # paramètres séparément ni de les grouper en 2 lots).
-            - mqtt.publish:
-                topic: "SmartEVSE/8931/Set/EVMeter"
-                payload: !lambda |-
-                  return to_string(id(smartevse_ev_da)) + ":0:0:" +
-                         to_string(id(smartevse_ev_power_w)) + ":" +
-                         to_string(id(smartevse_ev_energy_wh));
-                qos: 1
-
-            - logger.log:
-                format: "SmartEVSE MQTT EVMeter published: L1=%d P=%dW E=%dWh"
-                args: [id(smartevse_ev_da), id(smartevse_ev_power_w), id(smartevse_ev_energy_wh)]
-
-# =====================================================================
-# 5. BOUCLE D'ENVOI TELEMETRIE LINKY VERS LE SMARTEVSE (Toutes les 10s)
-# =====================================================================
-# Le fork basmeerman ne peuple MainsMeter.linky.* (tarif HP/HC, tension,
-# courant, puissance apparente, index d'énergie) que via une lecture Modbus
-# directe (registres 500/600, cf. tic-din-modbus) OU, depuis l'ajout du topic
-# /Set/LinkyMeter (mqtt_parser.c), via ce flux MQTT. Sans ce bloc, le badge
-# "Linky" de l'UI SmartEVSE reste bloqué sur "No signal (meter unavailable)"
-# même si le mains meter (Acrel, ci-dessus) fonctionne : ce sont deux flux
-# indépendants côté SmartEVSE (MainsMeter.Type=API pour les courants, Linky
-# séparément pour le tarif/la tension/l'énergie).
-# Cadence 10s (au lieu de 3s comme la boucle mains/EV) : le staleness timeout
-# côté SmartEVSE est de 300s (LINKY_MQTT_STALE_TIMEOUT_S), et le tarif HP/HC
-# ne change de toute façon qu'une à deux fois par jour.
-# Payload = mqtt_parse_linky_meter() du fork basmeerman :
-# "is_hp:is_hc:is_power_overflow:voltage_l1:current_l1:apparent_power:
-#  active_energy_total:contracted_power:total_hp:total_hc"
-# (2e entrée de la liste "interval" déclarée section 4 : ESPHome interdit une
-# 2e clé top-level "interval:", donc ceci prolonge la même liste YAML.)
-  - interval: 10s
-    id: smartevse_linky_feed
-    then:
-      - if:
-          condition:
-            lambda: |-
-              return id(linky_ltarf).has_state() &&
-                     id(linky_urms1).has_state() &&
-                     id(linky_irms1).has_state() &&
-                     id(linky_sinsts).has_state() &&
-                     id(linky_east).has_state() &&
-                     id(linky_pref).has_state() &&
-                     id(linky_easf01).has_state() &&
-                     id(linky_easf02).has_state() &&
-                     id(smartevse_mqtt).is_connected();
-          then:
-            # --- CALCULS ---
-            # Contrat HC/HP (cf. NGTF="H PLEINE/CREUSE") : LTARF vaut "HEURE
-            # PLEINE"/"HEURE CREUSE" en mode Standard. Pas de gestion Tempo/BASE
-            # ici (hors périmètre du contrat installé) -> is_hp=is_hc=0 dans ces
-            # cas, comme le ferait un flux Modbus tic-din-modbus absent.
-            - lambda: |-
-                std::string tarf = id(linky_ltarf).state;
-                id(smartevse_linky_is_hp) = (tarf.find("PLEINE") != std::string::npos) ? 1 : 0;
-                id(smartevse_linky_is_hc) = (tarf.find("CREUSE") != std::string::npos) ? 1 : 0;
-
-            # --- ENVOI LINKY METER (topic Set/LinkyMeter, cf. mqtt_parser.c du fork basmeerman) ---
-            # Format payload = mqtt_parse_linky_meter() : "is_hp:is_hc:is_power_overflow:
-            # voltage_l1:current_l1:apparent_power:active_energy_total:contracted_power:
-            # total_hp:total_hc" en un seul message.
-            - mqtt.publish:
-                topic: "SmartEVSE/8931/Set/LinkyMeter"
-                payload: !lambda |-
-                  int overflow = id(linky_depassement_puissance).state ? 1 : 0;
-                  return to_string(id(smartevse_linky_is_hp)) + ":" +
-                         to_string(id(smartevse_linky_is_hc)) + ":" +
-                         to_string(overflow) + ":" +
-                         to_string(id(linky_urms1).state) + ":" +
-                         to_string(id(linky_irms1).state) + ":" +
-                         to_string(id(linky_sinsts).state) + ":" +
-                         to_string(id(linky_east).state) + ":" +
-                         to_string(id(linky_pref).state) + ":" +
-                         to_string(id(linky_easf02).state) + ":" +
-                         to_string(id(linky_easf01).state);
-                qos: 1
-
-            - logger.log:
-                format: "SmartEVSE MQTT LinkyMeter published: is_hp=%d is_hc=%d"
-                args: [id(smartevse_linky_is_hp), id(smartevse_linky_is_hc)]
-
-# =====================================================================
-# 6. BOUCLE DLB (DYNAMIC LOAD BALANCING) ETEK (Toutes les 5s)
+# 4. BOUCLE DLB (DYNAMIC LOAD BALANCING) ETEK (Toutes les 5s)
 # =====================================================================
 # Plafonne le courant de charge ETEK (écriture registre 109, cf. section "number"
 # ci-dessus) pour que le courant total maison (Acrel L1+L2+L3) ne dépasse jamais la
@@ -1029,8 +861,7 @@ interval:
 # HAUSSE doit être confirmée sur 3 cycles consécutifs (~15s) avant d'être écrite, pour
 # ne pas faire varier le courant de charge à chaque fluctuation transitoire.
 #
-# (3e entrée de la liste "interval" déclarée section 4 : ESPHome interdit une 2e clé
-# top-level "interval:", donc ceci prolonge la même liste YAML.)
+interval:
   - interval: 5s
     id: etek_dlb
     then:
