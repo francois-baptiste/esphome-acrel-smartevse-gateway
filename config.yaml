@@ -878,7 +878,7 @@ interval:
                 const int ETEK_MIN_A = 6;       // plancher IEC 61851
                 const int ETEK_MAX_A = 32;      // disjoncteur du circuit ETEK (Rangée L2)
                 const int REG109_SCALE = 167;   // cf. evcc-io/evcc#18550, non calibré indépendamment sur ce firmware
-                const float SAFETY_MARGIN_A = 0.5f;
+                const float SAFETY_MARGIN_A = 0.0f;
                 // Mode agressif : le disjoncteur de branchement du Linky est calibré à PREF/200 V
                 // (3kVA=15A, 6kVA=30A, 9kVA=45A...), pas à PREF/tension réelle. Sa courbe thermique
                 // ne déclenche pas en dessous de ~1,13 x In (non-déclenchement conventionnel
