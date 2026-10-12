@@ -884,19 +884,15 @@ interval:
                 // ne déclenche pas en dessous de ~1,13 x In (non-déclenchement conventionnel
                 // IEC 60898, NON vérifié dans la doc Enedis) : on vise 1,10 x In. Validé par
                 // l'usage : 32A pendant 2h sans coupure (~33A total pour In=30A).
-                // Filet de sécurité : le bit STGE de dépassement (ci-dessous) force toujours 0A.
+                // Le bit STGE "dépassement puissance référence" n'est volontairement PAS utilisé :
+                // le Linky le lève dès que S > PREF (ici 7436 VA > 6 kVA à 30A), ce qui est
+                // normal dans ce mode et mettrait la charge en pause en boucle.
                 const float BREAKER_OVERLOAD_FACTOR = 1.10f;
                 const int CONFIRM_CYCLES = 2;   // ~10s à 5s/cycle
 
                 float non_ev_a = id(acrel_current_l1).state + id(acrel_current_l3).state;
                 float max_total_a = (id(linky_pref).state * 1000.0f / 200.0f) * BREAKER_OVERLOAD_FACTOR;
                 float headroom_a = max_total_a - non_ev_a - SAFETY_MARGIN_A;
-
-                // Dépassement de puissance déjà signalé par le Linky (bit STGE) : coupe
-                // court, pas la peine d'attendre que le calcul normal rattrape la réalité.
-                if (id(linky_depassement_puissance).state) {
-                  headroom_a = 0.0f;
-                }
 
                 int target_a = (int)floorf(headroom_a); // floor = ne jamais arrondir au-dessus du réel disponible
                 if (target_a > ETEK_MAX_A) target_a = ETEK_MAX_A;
