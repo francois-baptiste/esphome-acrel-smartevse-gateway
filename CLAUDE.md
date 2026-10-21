@@ -22,6 +22,15 @@ This controls a real charger and a real home installation: read "Working agreeme
 - SmartEVSE is no longer used (code removed in 17f8833). Influx data before ~24 Aug is the SmartEVSE era.
 - Python in WSL is 3.8: no `datetime.fromisoformat` on Influx timestamps, use `strptime` on the part before the dot.
 
+## Design rule: offline-first, no network reboot
+
+The DLB runs 100 % locally (wired Modbus for Acrel + ETEK, wired Teleinfo for the Linky). Wi-Fi, the MQTT
+broker or the native-API client may be down for hours without affecting load balancing. Therefore
+`wifi:`, `api:` and `mqtt:` all set `reboot_timeout: 0s`: a network outage must never reboot the ESP32,
+because a reboot wipes the DLB state (debounce counters, applied setpoint, pause state) in the middle of a
+charge. ESPHome keeps reconnecting in the background by itself. Never remove these lines or add another
+network-triggered reboot (watchdog on connectivity, `safe_mode` aside) without the owner's agreement.
+
 ## Build, validate, flash
 
 ```bash
@@ -158,8 +167,9 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
   9ad5ed9), OTA-flashed 2026-10-21 ~13:48 CEST, ESPHome 2026.7.0, config_hash 0x36750ac7.
 - Verified live at idle: boot, first write 31 A, read-back match, `dlb_*` series in Influx, loop cycling every 5 s.
 - NOT yet verified on a real charge: deadband, taper freeze, 6 A clamp, pause/resume debounce, stale fallback.
-- Open defect: 15-minute API reboot (known issue 1). Until it is fixed, count register writes per charging hour
-  net of the post-boot ones (the series drops to -1 at each reboot).
+- The 15-minute API reboot (known issue 1) is fixed by `reboot_timeout: 0s` on wifi/api/mqtt (see the
+  offline-first rule); the fixed firmware is flashed after the 13:48 build. Data before that flash still shows
+  the series dropping to -1 every 15 min.
 
 ## Checklist after the next charging session
 
@@ -170,7 +180,7 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 4. `dlb_gel_taper` = 1 during the end-of-charge taper with no register writes in that period.
 5. `dlb_donnees_perimees` = 0 all night; `dlb_consigne_etek_relue` ~ `dlb_consigne_appliquee` (writes land).
 6. After a house load step (kettle, oven): a drop >= 2 A is written on the next 5 s cycle and L2 follows in ~3 s.
-7. The ESP32 does not reboot during the session (see known issue below).
+7. The ESP32 does not reboot during the session (`dlb_consigne_appliquee` never returns to -1).
 
 ## Known issues / TODO
 
@@ -183,9 +193,8 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
    Effects: the DLB state is wiped every 15 min (debounce counters, applied setpoint, pause state; a paused
    charger gets `reg 89 = 0` at boot), one extra register-109 write per boot (~4/h on top of the 3.6/h from the
    replay, and it can move the setpoint by a deadband step), and ~10-20 s without DLB each time.
-   Proposed fix (not applied; owner decides because it disables an auto-recovery watchdog): add
-   `reboot_timeout: 0s` under `api:` (keep wifi/mqtt defaults), compile, flash with the car idle, then check that
-   `dlb_consigne_appliquee` no longer drops to -1 every 15 min.
+   **RESOLVED 2026-10-21** (owner decision): `reboot_timeout: 0s` on `wifi:`, `api:` and `mqtt:`, see "Design
+   rule: offline-first". To confirm: `dlb_consigne_appliquee` no longer drops to -1 every 15 min.
 2. Teleinfo logs `[E][teleinfo] bad crc` about once a minute: Linky line noise, harmless, Linky values still update.
 3. `dlb_donnees_perimees` is 1 for a few seconds after every boot (normal: no reading yet; the 20 s boot grace
    prevents a fallback write).

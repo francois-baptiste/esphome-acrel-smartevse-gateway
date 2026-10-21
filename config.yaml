@@ -15,11 +15,16 @@ esp32:
     # 5.4.4 = compromis : assez récent pour l'API wifi, sans le bug 5.5.x.
     version: "5.4.4"
 
+# Principe "offline-first" : la boucle DLB tourne en local (Modbus + Teleinfo filaires).
+# Aucune perte reseau (Wi-Fi, broker MQTT, client API) ne doit redemarrer l'ESP32 : un reboot
+# pendant une charge efface l'etat du DLB. D'ou reboot_timeout: 0s sur wifi / api / mqtt.
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  reboot_timeout: 0s
 
 api:
+  reboot_timeout: 0s
   encryption:
     key: !secret api_encryption_key
 
@@ -32,6 +37,7 @@ web_server:
 # Broker MQTT : ESPHome y publie l'état de chaque entité sur
 # "<node_name>/<domain>/<object_id>/state" (consommé par Telegraf -> InfluxDB).
 mqtt:
+  reboot_timeout: 0s
   broker: "37.187.129.84"
   port: 1883
   discovery: false # pas de découverte Home Assistant ; la publication des états reste active
