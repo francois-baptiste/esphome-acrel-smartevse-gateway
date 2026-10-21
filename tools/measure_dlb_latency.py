@@ -75,7 +75,7 @@ def iter_events(url):
                 evt = json.loads(payload)
             except json.JSONDecodeError:
                 continue
-            key = NAME_ID_MAP.get(evt.get("name_id"))
+            key = NAME_ID_MAP.get(evt.get("name_id") or evt.get("id"))
             if key is None or "value" not in evt:
                 continue
             try:
