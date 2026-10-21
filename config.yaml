@@ -54,6 +54,60 @@ globals:
     type: int
     initial_value: '0'
 
+  - id: dlb_pending_dir
+    type: int
+    initial_value: '0' # sens du changement en attente de confirmation : +1 hausse, -1 baisse modérée, 0 aucun
+
+  - id: dlb_pause_count
+    type: int
+    initial_value: '0' # cycles consécutifs avec headroom < plancher (déclenche la pause à PAUSE_CYCLES)
+
+  - id: dlb_resume_count
+    type: int
+    initial_value: '0' # cycles consécutifs avec headroom > seuil de reprise, pendant une pause
+
+  # Horodatages (millis) de la dernière mise à jour de chaque entrée de la boucle DLB.
+  - id: dlb_acrel_l1_ms
+    type: uint32_t
+    initial_value: '0'
+
+  - id: dlb_acrel_l2_ms
+    type: uint32_t
+    initial_value: '0'
+
+  - id: dlb_acrel_l3_ms
+    type: uint32_t
+    initial_value: '0'
+
+  - id: dlb_linky_ms
+    type: uint32_t
+    initial_value: '0'
+
+  # Dernières valeurs calculées par la boucle, exposées en télémétrie (capteurs template ci-dessous).
+  - id: dlb_headroom_a
+    type: float
+    initial_value: '0'
+
+  - id: dlb_limit_a
+    type: float
+    initial_value: '0'
+
+  - id: dlb_total_a
+    type: float
+    initial_value: '0'
+
+  - id: dlb_target_a
+    type: int
+    initial_value: '0'
+
+  - id: dlb_frozen
+    type: int
+    initial_value: '0'
+
+  - id: dlb_stale
+    type: int
+    initial_value: '0'
+
 # =====================================================================
 # 1. DECLARATION DES DEUX PORTS SERIE (UART) WAVESHARE
 # =====================================================================
@@ -237,6 +291,8 @@ sensor:
     filters:
       - multiply: 0.01
     unit_of_measurement: "A"
+    on_value:
+      - lambda: id(dlb_acrel_l1_ms) = millis();
 
   - platform: modbus_controller
     modbus_controller_id: acrel_adl400
@@ -249,6 +305,8 @@ sensor:
     filters:
       - multiply: 0.01
     unit_of_measurement: "A"
+    on_value:
+      - lambda: id(dlb_acrel_l2_ms) = millis();
 
   - platform: modbus_controller
     modbus_controller_id: acrel_adl400
@@ -261,6 +319,8 @@ sensor:
     filters:
       - multiply: 0.01
     unit_of_measurement: "A"
+    on_value:
+      - lambda: id(dlb_acrel_l3_ms) = millis();
 
   # --- TENSIONS ACREL ---
 
@@ -784,6 +844,113 @@ sensor:
     device_class: apparent_power
     state_class: measurement
     entity_category: diagnostic
+    on_value:
+      - lambda: id(dlb_linky_ms) = millis();
+
+  # --- TELEMETRIE DE LA BOUCLE DLB ETEK (publiée en MQTT -> Telegraf -> InfluxDB) ---
+  # Capteurs template (et non binary_sensor/number) car Telegraf n'est abonné qu'à
+  # "passerelle-energie-waveshare/sensor/+/state". Valeurs mises à jour toutes les 5 s.
+
+  - platform: template
+    name: "DLB Headroom brut"
+    id: dlb_headroom_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: 'return id(dlb_headroom_a);'
+
+  - platform: template
+    name: "DLB Limite totale"
+    id: dlb_limit_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: 'return id(dlb_limit_a);'
+
+  - platform: template
+    name: "DLB Courant total mesure"
+    id: dlb_total_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: 'return id(dlb_total_a);'
+
+  - platform: template
+    name: "DLB Cible bornee"
+    id: dlb_target_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) id(dlb_target_a);'
+
+  - platform: template
+    name: "DLB Consigne appliquee"
+    id: dlb_applied_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) id(etek_dlb_last_current_a);' # -1 = jamais écrite
+
+  - platform: template
+    name: "DLB Consigne ETEK relue"
+    id: dlb_readback_sensor
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: |-
+      if (!id(etek_epc2_reg109).has_state()) return -1.0f;
+      return id(etek_epc2_reg109).state / 167.0f;
+
+  - platform: template
+    name: "DLB Pause"
+    id: dlb_paused_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return id(etek_dlb_enabled) == 2 ? 1.0f : 0.0f;'
+
+  - platform: template
+    name: "DLB Compteur pause"
+    id: dlb_pause_count_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) id(dlb_pause_count);'
+
+  - platform: template
+    name: "DLB Compteur reprise"
+    id: dlb_resume_count_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) id(dlb_resume_count);'
+
+  - platform: template
+    name: "DLB Confirmation en attente"
+    id: dlb_pending_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) (id(dlb_pending_dir) * id(etek_dlb_pending_count));' # signé : + hausse, - baisse
+
+  - platform: template
+    name: "DLB Gel taper"
+    id: dlb_frozen_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) id(dlb_frozen);'
+
+  - platform: template
+    name: "DLB Donnees perimees"
+    id: dlb_stale_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: 'return (float) id(dlb_stale);'
+
+  - platform: template
+    name: "DLB Depassement Linky"
+    id: dlb_overshoot_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      if (!id(linky_depassement_puissance).has_state()) return -1.0f;
+      return id(linky_depassement_puissance).state ? 1.0f : 0.0f;
 
 # --- TEXT SENSOR POUR LE LINKY (Déclenchement HC/HP) ---
 
@@ -845,106 +1012,224 @@ binary_sensor:
 # 4. BOUCLE DLB (DYNAMIC LOAD BALANCING) ETEK (Toutes les 5s)
 # =====================================================================
 # Plafonne le courant de charge ETEK (écriture registre 109, cf. section "number"
-# ci-dessus) pour que le courant total maison (Acrel L1+L2+L3) ne dépasse jamais la
-# puissance souscrite Linky (PREF), avec une marge de sécurité. Le courant "disponible"
-# pour l'EV = PREF converti en ampères (via la tension Linky mesurée en direct) moins ce
-# que tirent déjà les deux autres circuits (L1+L3, hors EV = L2).
+# ci-dessus) pour que le courant total maison (Acrel L1+L2+L3) reste sous la limite
+# du disjoncteur de branchement (PREF/200 x 1,10, cf. mode agressif ci-dessous).
+# Headroom brut = limite - (L1+L3), c'est-à-dire ce que tirent déjà les deux autres
+# circuits ; le courant EV L2 mesuré ne sert qu'à détecter la fin de charge (taper).
 #
 # Cadence 5s : assez réactif face à un gros appel de puissance sur L1/L3, sans saturer
 # le bus 9600 bauds déjà partagé avec les lectures Acrel (2s) et ETEK (2s).
 #
-# IEC 61851-1 : pas de courant de charge < 6A -> en dessous, on met en pause (registre
-# 89 = 2) plutôt que d'envoyer une valeur hors norme.
+# Écritures registre 109 (une seule par cycle, uniquement si nécessaire) :
+#  - baisse >= 2 A par rapport à la consigne appliquée : immédiate (sécurité disjoncteur) ;
+#  - baisse modérée (0,8 A < écart < 2 A) ou hausse >= 1 A : confirmée sur 2 cycles (~10 s).
+#    Une consigne qui oscille de moins de 0,8 A autour du headroom n'est jamais réécrite
+#    (supprime le va-et-vient 30/31 A et limite les écritures Modbus sur l'ETEK).
 #
-# Anti-oscillation : une BAISSE de courant est appliquée immédiatement (priorité à la
-# sécurité du disjoncteur en cas de gros appel soudain sur un autre circuit) ; une
-# HAUSSE doit être confirmée sur 2 cycles consécutifs (~10s) avant d'être écrite, pour
-# ne pas faire varier le courant de charge à chaque fluctuation transitoire.
+# Plancher IEC 61851-1 (6 A) : un headroom < 6 A ne met PAS tout de suite en pause. La
+# consigne est d'abord bornée à 6 A ; la pause (registre 89 = 2) n'est déclenchée qu'après
+# 3 cycles consécutifs (~15 s) sous 6 A, et la reprise qu'après 2 cycles > 8 A. Raison : après
+# un registre 89 = 2 l'ETEK reste en statut 19 (hors service) pendant ~60 s quoi qu'on écrive
+# ensuite, et la voiture signale "charge arrêtée" - une pause doit donc rester exceptionnelle.
 #
+# Fin de charge (taper) : tant que le courant L2 mesuré est > 2 A sous la consigne et que le
+# headroom laisse >= 6 A d'écart au-dessus de ce que tire la voiture, la consigne est gelée
+# (aucune écriture Modbus). Le gel saute dès que la charge d'un autre circuit l'exige.
+#
+# Données périmées : si une lecture Acrel (L1/L2/L3) a plus de 15 s, ou le Linky plus de 300 s
+# (les capteurs teleinfo ne se mettent à jour qu'environ toutes les 100 s), la consigne passe
+# à 10 A (jamais relevée tant qu'on est aveugle) ; la pause éventuelle est conservée.
 interval:
   - interval: 5s
     id: etek_dlb
     then:
-      - if:
-          condition:
-            lambda: |-
-              return id(acrel_current_l1).has_state() &&
-                     id(acrel_current_l3).has_state() &&
-                     id(linky_pref).has_state() &&
-                     id(linky_urms1).has_state() &&
-                     id(linky_depassement_puissance).has_state();
-          then:
-            - lambda: |-
-                const int ETEK_MIN_A = 6;       // plancher IEC 61851
-                const int ETEK_MAX_A = 32;      // disjoncteur du circuit ETEK (Rangée L2)
-                const int REG109_SCALE = 167;   // cf. evcc-io/evcc#18550, non calibré indépendamment sur ce firmware
-                const float SAFETY_MARGIN_A = 0.0f;
-                // Mode agressif : le disjoncteur de branchement du Linky est calibré à PREF/200 V
-                // (3kVA=15A, 6kVA=30A, 9kVA=45A...), pas à PREF/tension réelle. Sa courbe thermique
-                // ne déclenche pas en dessous de ~1,13 x In (non-déclenchement conventionnel
-                // IEC 60898, NON vérifié dans la doc Enedis) : on vise 1,10 x In. Validé par
-                // l'usage : 32A pendant 2h sans coupure (~33A total pour In=30A).
-                // Le bit STGE "dépassement puissance référence" n'est volontairement PAS utilisé :
-                // le Linky le lève dès que S > PREF (ici 7436 VA > 6 kVA à 30A), ce qui est
-                // normal dans ce mode et mettrait la charge en pause en boucle.
-                const float BREAKER_OVERLOAD_FACTOR = 1.10f;
-                const int CONFIRM_CYCLES = 2;   // ~10s à 5s/cycle
+      - lambda: |-
+          const int   ETEK_MIN_A = 6;       // plancher IEC 61851
+          const int   ETEK_MAX_A = 32;      // disjoncteur du circuit ETEK (Rangée L2)
+          const int   REG109_SCALE = 167;   // 167 unités brutes par ampère (confirmé sur ce firmware le 2026-10-08)
+          // 0,3 A de marge pour compenser la bande morte ci-dessous : sans elle la consigne peut rester
+          // jusqu'à 0,8 A au-dessus du headroom calculé (rejeu de la nuit du 19 au 20/10 : 26 % des cycles
+          // au-dessus de la limite, pic +1,04 A). Avec 0,3 A : 8 % des cycles, pic +0,57 A, et le courant
+          // moyen délivré reste identique à l'ancienne boucle (28,8 A). Remettre 0 pour charger au plus juste.
+          const float SAFETY_MARGIN_A = 0.3f;
+          // Mode agressif : le disjoncteur de branchement du Linky est calibré à PREF/200 V
+          // (3kVA=15A, 6kVA=30A, 9kVA=45A...), pas à PREF/tension réelle. Sa courbe thermique
+          // ne déclenche pas en dessous de ~1,13 x In (non-déclenchement conventionnel
+          // IEC 60898, NON vérifié dans la doc Enedis) : on vise 1,10 x In. Validé par
+          // l'usage : 32A pendant 2h sans coupure (~33A total pour In=30A).
+          // Le bit STGE "dépassement puissance référence" n'est volontairement PAS utilisé :
+          // le Linky le lève dès que S > PREF (ici 7436 VA > 6 kVA à 30A), ce qui est
+          // normal dans ce mode et mettrait la charge en pause en boucle.
+          const float BREAKER_OVERLOAD_FACTOR = 1.10f;
 
-                float non_ev_a = id(acrel_current_l1).state + id(acrel_current_l3).state;
-                float max_total_a = (id(linky_pref).state * 1000.0f / 200.0f) * BREAKER_OVERLOAD_FACTOR;
-                float headroom_a = max_total_a - non_ev_a - SAFETY_MARGIN_A;
+          const float DEADBAND_A = 0.8f;        // écart ignoré entre headroom et consigne appliquée
+          const float EMERGENCY_STEP_A = 2.0f;  // baisse >= 2 A : écrite sans attendre
+          const int   UP_CONFIRM = 2;           // cycles consécutifs pour une hausse
+          const int   DOWN_CONFIRM = 2;         // cycles consécutifs pour une baisse modérée
+          const int   PAUSE_CYCLES = 3;         // cycles sous ETEK_MIN_A avant pause (~15 s)
+          const int   RESUME_CYCLES = 2;        // cycles au-dessus de RESUME_HEADROOM_A avant reprise
+          const float RESUME_HEADROOM_A = 8.0f;
+          const float TAPER_DETECT_A = 2.0f;    // L2 mesuré sous la consigne de plus de ça = fin de charge
+          const float TAPER_ROOM_A = 6.0f;      // marge au-dessus de L2 sous laquelle le gel est levé
+          const int   FALLBACK_A = 10;          // consigne en cas de données périmées
+          const uint32_t ACREL_STALE_MS = 15000;
+          const uint32_t LINKY_STALE_MS = 300000;
+          const uint32_t BOOT_GRACE_MS = 20000;
 
-                int target_a = (int)floorf(headroom_a); // floor = ne jamais arrondir au-dessus du réel disponible
-                if (target_a > ETEK_MAX_A) target_a = ETEK_MAX_A;
-                if (target_a < 0) target_a = 0;
+          // ---------- Fraîcheur des données ----------
+          const uint32_t now = millis();
+          bool stale = !(id(acrel_current_l1).has_state() && id(acrel_current_l2).has_state() &&
+                         id(acrel_current_l3).has_state() && id(linky_pref).has_state());
+          if (!stale) {
+            stale = (uint32_t)(now - id(dlb_acrel_l1_ms)) > ACREL_STALE_MS ||
+                    (uint32_t)(now - id(dlb_acrel_l2_ms)) > ACREL_STALE_MS ||
+                    (uint32_t)(now - id(dlb_acrel_l3_ms)) > ACREL_STALE_MS ||
+                    (uint32_t)(now - id(dlb_linky_ms)) > LINKY_STALE_MS ||
+                    std::isnan(id(acrel_current_l1).state) || std::isnan(id(acrel_current_l2).state) ||
+                    std::isnan(id(acrel_current_l3).state) || std::isnan(id(linky_pref).state) ||
+                    id(linky_pref).state < 1.0f;
+          }
+          id(dlb_stale) = stale ? 1 : 0;
 
-                bool should_pause = (target_a < ETEK_MIN_A);
-                int applied_a = should_pause ? 0 : target_a;
+          if (stale) {
+            if (now < BOOT_GRACE_MS) return;  // les premières lectures n'ont pas encore eu lieu
+            int last = id(etek_dlb_last_current_a);
+            if (id(etek_dlb_enabled) != 2 && (last < 0 || last > FALLBACK_A)) {
+              id(etek_epc2_reg109).make_call().set_value(FALLBACK_A * REG109_SCALE).perform();
+              id(etek_dlb_last_current_a) = FALLBACK_A;
+              ESP_LOGW("etek_dlb", "DLB: données périmées -> consigne de secours %dA (reg109=%d)",
+                       FALLBACK_A, FALLBACK_A * REG109_SCALE);
+            }
+            id(etek_dlb_pending_count) = 0;
+            id(dlb_pending_dir) = 0;
+            id(dlb_pause_count) = 0;
+            id(dlb_resume_count) = 0;
+            return;
+          }
 
-                // --- Activation (registre 89) ---
-                int want_enabled = should_pause ? 2 : 0; // cf. evcc#18550 : 0=actif, 2=arrêt d'urgence
-                if (id(etek_dlb_enabled) != want_enabled) {
-                  id(etek_epc2_reg89).make_call().set_value(want_enabled).perform();
-                  id(etek_dlb_enabled) = want_enabled;
-                  ESP_LOGI("etek_dlb", "Registre 89 -> %d (%s)", want_enabled, should_pause ? "pause" : "actif");
-                }
+          // ---------- Mesures et headroom ----------
+          const float l1 = id(acrel_current_l1).state;
+          const float l2 = id(acrel_current_l2).state;
+          const float l3 = id(acrel_current_l3).state;
+          const float total = l1 + l2 + l3;
+          const float limit = id(linky_pref).state * 1000.0f / 200.0f * BREAKER_OVERLOAD_FACTOR;
+          const float headroom = limit - (l1 + l3) - SAFETY_MARGIN_A;   // brut, peut être < 6 ou < 0
+          // Borné au plancher/plafond ETEK : un creux bref de headroom donne 6 A, pas une pause.
+          const float h = fminf(fmaxf(headroom, (float) ETEK_MIN_A), (float) ETEK_MAX_A);
+          const int want = (int) floorf(h);   // floor = ne jamais arrondir au-dessus du réel disponible
 
-                if (should_pause) {
-                  id(etek_dlb_pending_count) = 0; // reset l'anti-oscillation pendant une pause
-                  ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA -> pause charge", headroom_a, ETEK_MIN_A);
-                } else {
-                  int last_a = id(etek_dlb_last_current_a);
+          id(dlb_headroom_a) = headroom;
+          id(dlb_limit_a) = limit;
+          id(dlb_total_a) = total;
+          id(dlb_target_a) = want;
 
-                  if (last_a < 0 || applied_a <= last_a) {
-                    // Première écriture, ou baisse : appliquée tout de suite (sécurité disjoncteur).
-                    if (applied_a != last_a) {
-                      id(etek_epc2_reg109).make_call().set_value(applied_a * REG109_SCALE).perform();
-                      id(etek_dlb_last_current_a) = applied_a;
-                      ESP_LOGI("etek_dlb", "DLB: cible=%dA (headroom=%.1fA) -> écrit reg109=%d",
-                               applied_a, headroom_a, applied_a * REG109_SCALE);
-                    }
-                    id(etek_dlb_pending_count) = 0;
-                  } else {
-                    // Hausse : exige confirmation sur CONFIRM_CYCLES cycles consécutifs identiques.
-                    if (applied_a == id(etek_dlb_pending_target_a)) {
-                      id(etek_dlb_pending_count) += 1;
-                    } else {
-                      id(etek_dlb_pending_target_a) = applied_a;
-                      id(etek_dlb_pending_count) = 1;
-                    }
+          auto write_cap = [&](int amps, const char *why) {
+            id(etek_epc2_reg109).make_call().set_value(amps * REG109_SCALE).perform();
+            id(etek_dlb_last_current_a) = amps;
+            id(etek_dlb_pending_count) = 0;
+            id(dlb_pending_dir) = 0;
+            ESP_LOGI("etek_dlb", "DLB: %s -> cible=%dA (headroom=%.1fA, L2=%.1fA, total=%.1f/%.1fA) -> reg109=%d",
+                     why, amps, headroom, l2, total, limit, amps * REG109_SCALE);
+          };
 
-                    if (id(etek_dlb_pending_count) >= CONFIRM_CYCLES) {
-                      id(etek_epc2_reg109).make_call().set_value(applied_a * REG109_SCALE).perform();
-                      id(etek_dlb_last_current_a) = applied_a;
-                      id(etek_dlb_pending_count) = 0;
-                      ESP_LOGI("etek_dlb", "DLB: hausse confirmée=%dA (headroom=%.1fA) -> écrit reg109=%d",
-                               applied_a, headroom_a, applied_a * REG109_SCALE);
-                    } else {
-                      ESP_LOGD("etek_dlb", "DLB: hausse candidate=%dA (actuel=%dA), confirmation %d/%d",
-                               applied_a, last_a, id(etek_dlb_pending_count), CONFIRM_CYCLES);
-                    }
-                  }
-                }
+          // Premier cycle après démarrage : s'assurer que la charge est autorisée.
+          if (id(etek_dlb_enabled) < 0) {
+            id(etek_epc2_reg89).make_call().set_value(0).perform();
+            id(etek_dlb_enabled) = 0;
+          }
+
+          // ---------- Pause / reprise ----------
+          if (id(etek_dlb_enabled) == 2) {
+            id(dlb_frozen) = 0;
+            if (headroom > RESUME_HEADROOM_A) {
+              id(dlb_resume_count) += 1;
+            } else {
+              id(dlb_resume_count) = 0;
+            }
+            if (id(dlb_resume_count) < RESUME_CYCLES) {
+              ESP_LOGD("etek_dlb", "DLB: en pause (headroom=%.1fA, reprise %d/%d)",
+                       headroom, id(dlb_resume_count), RESUME_CYCLES);
+              return;
+            }
+            id(etek_epc2_reg89).make_call().set_value(0).perform();
+            id(etek_dlb_enabled) = 0;
+            id(dlb_resume_count) = 0;
+            id(dlb_pause_count) = 0;
+            id(etek_dlb_last_current_a) = -1;   // force une écriture de consigne à la reprise
+            ESP_LOGI("etek_dlb", "DLB: reprise de la charge (headroom=%.1fA)", headroom);
+          }
+
+          int last = id(etek_dlb_last_current_a);
+
+          // ---------- Fin de charge : consigne gelée ----------
+          const bool tapering = last >= 0 && l2 < (float) last - TAPER_DETECT_A;
+          const bool freeze = tapering && headroom >= l2 + TAPER_ROOM_A;
+          id(dlb_frozen) = freeze ? 1 : 0;
+          if (freeze) {
+            id(etek_dlb_pending_count) = 0;
+            id(dlb_pending_dir) = 0;
+            id(dlb_pause_count) = 0;
+            ESP_LOGD("etek_dlb", "DLB: taper (L2=%.1fA < consigne %dA), consigne gelée", l2, last);
+            return;
+          }
+
+          // ---------- Pause après 3 cycles sous le plancher ----------
+          if (headroom < (float) ETEK_MIN_A) {
+            id(dlb_pause_count) += 1;
+            if (id(dlb_pause_count) >= PAUSE_CYCLES) {
+              id(etek_epc2_reg89).make_call().set_value(2).perform();
+              id(etek_dlb_enabled) = 2;
+              id(dlb_pause_count) = 0;
+              id(dlb_resume_count) = 0;
+              id(etek_dlb_pending_count) = 0;
+              id(dlb_pending_dir) = 0;
+              ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA depuis %d cycles -> pause charge",
+                       headroom, ETEK_MIN_A, PAUSE_CYCLES);
+              return;
+            }
+            ESP_LOGD("etek_dlb", "DLB: headroom=%.1fA < %dA, borné à %dA (%d/%d avant pause)",
+                     headroom, ETEK_MIN_A, ETEK_MIN_A, id(dlb_pause_count), PAUSE_CYCLES);
+          } else {
+            id(dlb_pause_count) = 0;
+          }
+
+          // ---------- Consigne : bande morte + confirmation ----------
+          if (last < 0) {
+            write_cap(want, "première écriture");
+            return;
+          }
+          const float diff = h - (float) last;   // < 0 : la consigne dépasse le disponible
+          if (diff <= -EMERGENCY_STEP_A) {
+            write_cap(want, "baisse forte");
+          } else if (diff < -DEADBAND_A) {
+            if (id(dlb_pending_dir) == -1) {
+              id(etek_dlb_pending_count) += 1;
+            } else {
+              id(dlb_pending_dir) = -1;
+              id(etek_dlb_pending_count) = 1;
+            }
+            if (id(etek_dlb_pending_count) >= DOWN_CONFIRM) {
+              write_cap(want, "baisse confirmée");
+            }
+          } else if (want > last) {
+            if (id(dlb_pending_dir) == 1) {
+              id(etek_dlb_pending_count) += 1;
+              if (want < id(etek_dlb_pending_target_a)) id(etek_dlb_pending_target_a) = want;  // valeur la plus prudente de la fenêtre
+            } else {
+              id(dlb_pending_dir) = 1;
+              id(etek_dlb_pending_count) = 1;
+              id(etek_dlb_pending_target_a) = want;
+            }
+            if (id(etek_dlb_pending_count) >= UP_CONFIRM) {
+              write_cap(id(etek_dlb_pending_target_a), "hausse confirmée");
+            } else {
+              ESP_LOGD("etek_dlb", "DLB: hausse candidate=%dA (actuel=%dA), confirmation %d/%d",
+                       want, last, id(etek_dlb_pending_count), UP_CONFIRM);
+            }
+          } else {
+            id(etek_dlb_pending_count) = 0;
+            id(dlb_pending_dir) = 0;
+          }
 
 logger:
   level: DEBUG
