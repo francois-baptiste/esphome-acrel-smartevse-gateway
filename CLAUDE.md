@@ -43,6 +43,7 @@ $ESPHOME compile config.yaml                      # full build, ~3 min with warm
 $ESPHOME upload config.yaml --device 90.40.199.251  # OTA on port 3232, no password, ~10 s, device reboots
 rm secrets.yaml
 python3 tools/dlb_sim/test_dlb.py [--baseline <git rev>]   # DLB logic tests, see below
+python3 tools/dlb_sim/replay.py charge.csv --baseline HEAD [--taper] [--from/--to <UTC>]   # replay a recorded charge, see below
 ```
 
 Device (name `passerelle-energie-waveshare`, board `esp32-s3-devkitc-1`, public IP 90.40.199.251, may change):
@@ -56,6 +57,11 @@ Device (name `passerelle-energie-waveshare`, board `esp32-s3-devkitc-1`, public 
 stub sensors and drives it with scenarios (needs g++): deadband, confirmation, clamp/pause/resume, taper
 freeze, stale fallback, other subscriptions. Run it after any change to section 4. `tools/measure_dlb_latency.py`
 measures write -> meter latency from the SSE feed (`--trigger direct` or `load-step`).
+`tools/dlb_sim/replay.py` replays an exported Influx charge (Acrel L1/L2/L3, `dlb_consigne_appliquee`, `etek_epc2_statut`
+as annotated CSV from `tools/flux.sh`) through the old (`--baseline`) and working-tree lambdas with a simple EV plant
+(ETEK latency 2.7 s down / 4.2 s up). Draft result (2 s Acrel batches), old -> draft: 19-20 Oct night 3.9 -> 3.6 writes/h, 8.4 -> 8.1 % of time above the
+limit, 0.16 -> 0.10 % above limit+1.5 A; 21 Oct charge 10.2 -> 10.7 writes/h, 0.27 -> 0.21 % above limit+1.5 A, peak
+17.6 -> 16.4 A. The gain is ~2-3 s per load step, not a different regime: big house steps are still seen for one sample.
 Quick checks, in order: `esphome config`, the g++ harness, `compile --only-generate`; the real `compile` is the
 final one (the toolchain is cached in this WSL, so it works from a worktree).
 
@@ -64,7 +70,8 @@ final one (the toolchain is cached in this WSL, so it works from a worktree).
 - Single-phase installation, Linky in Standard TIC mode (UART, `teleinfo` component), subscription **6 kVA**
   (`PREF`). The house breaker is assumed to be 30 A = PREF/200 (not verified in Enedis documentation).
 - RS485 bus: GPIO17/18, flow control GPIO21, **9600 8N1** (the ETEK only answers at 9600 despite the manual),
-  shared by the Acrel ADL400 (address 0x0B) and the ETEK EKEPC2-C (address 0x64); each polled every 2 s.
+  shared by the Acrel ADL400 (address 0x0B) and the ETEK EKEPC2-C (address 0x64); Acrel and ETEK each polled every 2 s.
+  The Acrel currents + voltages (0x61-0x66) are one contiguous 6-register read (ESPHome merges contiguous registers).
 - Acrel channel mapping: **L1 = house row 1, L2 = EV circuit, L3 = house row 2**. House load = L1 + L3.
 - ETEK registers: **109** = max charging current ("max output PWM duty"), R/W, **167 raw units per ampere**
   (confirmed 2026-10-08: 16 A target -> 15.9 A on the Acrel); **89** = activation, 0 = active, 2 = emergency
@@ -82,7 +89,19 @@ final one (the toolchain is cached in this WSL, so it works from a worktree).
   ingested** (`passerelle-energie-waveshare/sensor/+/state`), so numbers (reg 109/89) and binary sensors
   (Linky overshoot bit) are invisible in Influx unless mirrored as template sensors (the `dlb_*` ones).
 
-## DLB loop (config.yaml section 4, `interval: 5s`, id `etek_dlb`)
+## DLB loop (config.yaml section 4)
+
+**Event-driven since 2026-10-22 (flashed, live).** Before that (d2e39ee) the loop was an `interval: 5s` timer with
+cycle-count debounce (2/2/3/2 cycles). It is now event-driven:
+`script: etek_dlb` (mode single, parameter `from_watchdog`) runs when the Acrel L3 `on_value` fires (L3 is the last
+of the 0x61-0x66 block, so L1/L2/L3 are one batch); a supervisor `interval: 5s` (`etek_dlb_watchdog`) calls it with
+`from_watchdog: true` and it then ONLY checks staleness (fallback 10 A), never debounce or normal writes.
+Safeguards: batch spread L1/L2/L3 timestamps must be < 500 ms else the batch is ignored (and `dlb_batch_ms` is
+not refreshed, so the supervisor still declares stale after 15 s); debounce timers in `millis()`; a gap > 5 s between
+batches (2 lost reads in a row) resets the timers; taper detection suspended 6 s after any register-109 write (L2 needs 2.7-4.8 s to follow).
+Timings: confirmation 5 s (4 batches, 6 s observed), resume 9 s (6 batches, 10 s), pause 15 s (9 batches, 16 s);
+thresholds sit between multiples of 2 s; bus jitter changes the batch count only beyond +-0.3 s (confirmation),
++-0.2 s (resume) or +-0.12 s (pause) per interval, and then by one batch (2 s) at worst. The table below gives the previous d2e39ee values; the bracketed values are the ones now flashed.
 
 limit = PREF x 1000 / 200 x **1.10** (= 33 A at 6 kVA); headroom = limit - (L1 + L3) - **0.3 A** margin;
 bounded to 6..32 A (IEC 61851 floor, circuit maximum). The Linky overshoot bit (STGE, set whenever S > PREF,
@@ -92,10 +111,10 @@ i.e. permanently above ~26 A) is deliberately NOT used.
 |---|---|
 | write only if setpoint differs from headroom by more than | **0.8 A** deadband |
 | drop >= 2 A | written immediately |
-| moderate drop (0.8-2 A) / rise >= 1 A | confirmed on 2 consecutive cycles (rise uses the most prudent value of the window) |
-| headroom < 6 A | clamped to 6 A; **pause (reg 89 = 2) only after 3 consecutive cycles** |
-| resume (reg 89 = 0) | headroom > 8 A for 2 cycles, then the setpoint is rewritten |
-| taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes |
+| moderate drop (0.8-2 A) / rise >= 1 A | confirmed on 2 consecutive cycles [now: held 5 s] (rise uses the most prudent value of the window) |
+| headroom < 6 A | clamped to 6 A; **pause (reg 89 = 2) only after 3 consecutive cycles** [now: 15 s continuous] |
+| resume (reg 89 = 0) | headroom > 8 A for 2 cycles [now: 9 s], then the setpoint is rewritten |
+| taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes [now: not evaluated for 6 s after a write] |
 | stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint 10 A (never raised while blind), pause kept; 20 s boot grace |
 | first cycle after boot | reg 89 = 0, then first setpoint write |
 
@@ -143,7 +162,7 @@ Measurements: `acrel` (everything the ESP publishes; tag `topic`, field `value`)
 | `dlb_consigne_appliquee` | last value written to reg 109 by the loop, A (-1 = none since boot) |
 | `dlb_consigne_etek_relue` | reg 109 read back from the ETEK / 167, A (should equal the line above) |
 | `dlb_pause` | 1 while reg 89 = 2 |
-| `dlb_compteur_pause`, `dlb_compteur_reprise` | consecutive cycles toward pause / resume |
+| `dlb_compteur_pause`, `dlb_compteur_reprise` | consecutive cycles toward pause / resume (now: telemetry only, decisions use millis timers) |
 | `dlb_confirmation_en_attente` | signed pending count (+ rise, - moderate drop) |
 | `dlb_gel_taper` | 1 while the setpoint is frozen (taper or idle car) |
 | `dlb_donnees_perimees` | 1 while inputs are stale |
@@ -158,15 +177,31 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 
 - 2026-10-11 15:07-15:35 and 2026-10-12 22:03-22:57: repeated ~60 s stops (status 19). Cause: the loop then
   paused on the Linky overshoot bit (S > 6 kVA). Fixed by c6f0764 (bit ignored), then d2e39ee (pause debounce).
+- 2026-10-21 22:03 -> ~23:50 CEST (20:03 -> ~21:50 UTC in Influx): first real charge on the d2e39ee logic. No reboot,
+  `etek_epc2_statut` never 19, `dlb_pause` and `dlb_donnees_perimees` stayed 0, no write during the end taper
+  (`dlb_gel_taper` = 1 from ~21:40 UTC), read-back = applied. 22 setpoint changes between 20:03 and 20:55 UTC
+  (house load was moving a lot; the replay predicted 3.6/h on the quiet 19-20 Oct night), none afterwards.
+  Total current vs 33 A limit over 1208 samples (5 s): 78 above 33 A, 7 above 33.6 A, 4 above 34.5 A. Those 4 are
+  house load steps seen before the loop could react: 49.5 A at 20:13:00 UTC (setpoint 29 -> 12 -> 10 at once,
+  back to 31.6 A on the next sample), 40.6 A at 20:34:55, 41.0 A at 20:50:10; each lasted 1-2 samples. This is the
+  ~6-15 s reaction time (5 s timer + Acrel age + 2.7 s ETEK), the motivation for the event-driven DLB draft.
 - 2026-10-12 14:53: "aggressive" mode (1.10 x breaker) introduced; ~32-33 A total ran for hours without a trip.
 - Older SmartEVSE-era nights (Jul-Aug) show 2-30 current steps/h; ETEK 19 Oct (before d2e39ee) 11.7 steps/h.
 
 ## Current status
 
-- `master` = 9ad5ed9 + this file. The flashed firmware was built from `config.yaml` at d2e39ee (unchanged in
-  9ad5ed9), OTA-flashed 2026-10-21 ~13:48 CEST, ESPHome 2026.7.0, config_hash 0x36750ac7.
-- Verified live at idle: boot, first write 31 A, read-back match, `dlb_*` series in Influx, loop cycling every 5 s.
-- NOT yet verified on a real charge: deadband, taper freeze, 6 A clamp, pause/resume debounce, stale fallback.
+- `master` = the commit that adds the 2 s event-driven DLB (see `git log`). Flashed firmware = that `config.yaml`,
+  OTA-flashed 2026-10-22 ~02:45 CEST (00:45 UTC) with the car idle (status 3, L2 <= 0.09 A for 2 h 15 min after the
+  charge ended at ~22:30 UTC; status 3, not 1, is the usual idle value here), ESPHome 2026.7.0.
+- Verified live at idle right after the flash (60 s capture): 29 DLB runs, one every ~2.07 s, each right after the
+  L3 publish; voltages + currents published within 40 ms of each other (one 6-register read; `dump_config` only
+  prints the `Range` lines at VERBOSE level, the device runs DEBUG); no rejected batch, no stale flag
+  (`dlb_donnees_perimees` 0), `dlb_pause` 0, first write 31 A read back as 31 A, taper freeze 1 (idle car); one
+  `modbus_controller took a long time (90 ms)` warning, no Modbus error.
+- Verified on the 2026-10-21 charge (previous 5 s logic): deadband, strong step-down (immediate), taper freeze, no
+  reboot, no status 19. NOT yet verified on a real charge with the event-driven logic: everything, in particular
+  the 6 s post-write holdoff, millis() confirmations, 6 A clamp, pause/resume, stale fallback. Compare the next
+  charge with the replay numbers (see the `replay.py` paragraph above).
 - The 15-minute API reboot (known issue 1) is fixed by `reboot_timeout: 0s` on wifi/api/mqtt (see the
   offline-first rule); the fixed firmware is flashed after the 13:48 build. Data before that flash still shows
   the series dropping to -1 every 15 min.
@@ -179,7 +214,7 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 3. `dlb_courant_total_mesure` <= `dlb_limite_totale` + ~0.6 A almost always (replay: 8 % of cycles slightly above).
 4. `dlb_gel_taper` = 1 during the end-of-charge taper with no register writes in that period.
 5. `dlb_donnees_perimees` = 0 all night; `dlb_consigne_etek_relue` ~ `dlb_consigne_appliquee` (writes land).
-6. After a house load step (kettle, oven): a drop >= 2 A is written on the next 5 s cycle and L2 follows in ~3 s.
+6. After a house load step (kettle, oven): a drop >= 2 A is written on the next Acrel batch (<= 2 s) and L2 follows in ~3 s.
 7. The ESP32 does not reboot during the session (`dlb_consigne_appliquee` never returns to -1).
 
 ## Known issues / TODO

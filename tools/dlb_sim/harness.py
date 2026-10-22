@@ -39,6 +39,7 @@ static Reg etek_epc2_reg109{109}, etek_epc2_reg89{89};
 static int etek_dlb_last_current_a = -1, etek_dlb_enabled = -1, etek_dlb_pending_target_a = 0, etek_dlb_pending_count = 0;
 static int dlb_pending_dir = 0, dlb_pause_count = 0, dlb_resume_count = 0, dlb_target_a = 0, dlb_frozen = 0, dlb_stale = 0;
 static uint32_t dlb_acrel_l1_ms = 0, dlb_acrel_l2_ms = 0, dlb_acrel_l3_ms = 0, dlb_linky_ms = 0;
+static uint32_t dlb_batch_ms = 0, dlb_pending_since_ms = 0, dlb_pause_since_ms = 0, dlb_resume_since_ms = 0, dlb_last_write_ms = 0;
 static float dlb_headroom_a = 0, dlb_limit_a = 0, dlb_total_a = 0;
 '''
 
@@ -49,6 +50,7 @@ void h_reset() {
   etek_dlb_last_current_a = -1; etek_dlb_enabled = -1; etek_dlb_pending_target_a = 0; etek_dlb_pending_count = 0;
   dlb_pending_dir = 0; dlb_pause_count = 0; dlb_resume_count = 0; dlb_target_a = 0; dlb_frozen = 0; dlb_stale = 0;
   dlb_acrel_l1_ms = dlb_acrel_l2_ms = dlb_acrel_l3_ms = dlb_linky_ms = 0;
+  dlb_batch_ms = dlb_pending_since_ms = dlb_pause_since_ms = dlb_resume_since_ms = dlb_last_write_ms = 0;
   acrel_current_l1 = Sens(); acrel_current_l2 = Sens(); acrel_current_l3 = Sens(); linky_pref = Sens(); linky_urms1 = Sens();
 }
 void h_verbose(int v) { g_verbose = v; }
@@ -59,7 +61,14 @@ void h_feed_acrel(float l1, float l2, float l3) {
   acrel_current_l3.state = l3; acrel_current_l3.hs = true; dlb_acrel_l3_ms = g_now;
 }
 void h_feed_linky(float pref) { linky_pref.state = pref; linky_pref.hs = true; dlb_linky_ms = g_now; linky_urms1.state = 233; linky_urms1.hs = true; }
-void h_cycle() { etek_dlb_cycle(); }
+// Lot dont les trois horodatages sont décalés (ms) : simule un bloc Modbus éclaté.
+void h_feed_acrel_skewed(float l1, float l2, float l3, uint32_t d1, uint32_t d2) {
+  acrel_current_l1.state = l1; acrel_current_l1.hs = true; dlb_acrel_l1_ms = g_now - d1;
+  acrel_current_l2.state = l2; acrel_current_l2.hs = true; dlb_acrel_l2_ms = g_now - d2;
+  acrel_current_l3.state = l3; acrel_current_l3.hs = true; dlb_acrel_l3_ms = g_now;
+}
+void h_cycle() { etek_dlb_cycle(false); }      // trigger L3 on_value
+void h_watchdog() { etek_dlb_cycle(true); }    // supervisor interval
 int h_nwrites() { return (int) g_writes.size(); }
 int h_write_reg(int i) { return g_writes[i].reg; }
 double h_write_val(int i) { return g_writes[i].val; }
@@ -75,6 +84,10 @@ int h_get(int what) {
     case 6: return dlb_frozen;
     case 7: return dlb_stale;
     case 8: return dlb_target_a;
+    case 9: return (int) dlb_pause_since_ms;
+    case 10: return (int) dlb_last_write_ms;
+    case 11: return (int) dlb_batch_ms;
+    case 12: return (int) dlb_pending_since_ms;
   }
   return -999;
 }
@@ -97,7 +110,7 @@ def extract_lambda(yaml_text, marker):
 
 def build(cfg_text, marker, out_name, workdir):
     body = extract_lambda(cfg_text, marker)
-    src = PRELUDE + "\nstatic void etek_dlb_cycle() {\n" + body + "}\n" + TAIL
+    src = PRELUDE + "\nstatic void etek_dlb_cycle(bool from_watchdog) {\n" + body + "}\n" + TAIL
     cpp = f"{workdir}/{out_name}.cpp"
     open(cpp, "w", encoding="utf-8").write(src)
     r = subprocess.run(["g++", "-std=c++17", "-O1", "-Wall", "-Wno-unused-variable", "-Wno-unused-but-set-variable",
@@ -113,6 +126,7 @@ def build(cfg_text, marker, out_name, workdir):
     lib.h_getf.restype = ctypes.c_float
     lib.h_feed_acrel.argtypes = [ctypes.c_float] * 3
     lib.h_feed_linky.argtypes = [ctypes.c_float]
+    lib.h_feed_acrel_skewed.argtypes = [ctypes.c_float] * 3 + [ctypes.c_uint32] * 2
     lib.h_set_time.argtypes = [ctypes.c_uint32]
     lib.h_write_t.restype = ctypes.c_uint32
     return lib

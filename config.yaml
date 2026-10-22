@@ -89,6 +89,29 @@ globals:
     type: uint32_t
     initial_value: '0'
 
+  # Dernier lot Acrel L1+L2+L3 accepté par la boucle (cohérent à 500 ms près) ; 0 = aucun depuis le boot.
+  - id: dlb_batch_ms
+    type: uint32_t
+    initial_value: '0'
+
+  # Debounce basé sur millis() (0 = pas de minuterie en cours) : la cadence réelle du bus peut varier
+  # (retries Modbus), les compteurs ci-dessus ne servent plus qu'à la télémétrie.
+  - id: dlb_pending_since_ms
+    type: uint32_t
+    initial_value: '0' # début de la confirmation en cours (hausse ou baisse modérée)
+
+  - id: dlb_pause_since_ms
+    type: uint32_t
+    initial_value: '0' # début de la période continue sous le plancher 6 A
+
+  - id: dlb_resume_since_ms
+    type: uint32_t
+    initial_value: '0' # début de la période continue au-dessus du seuil de reprise
+
+  - id: dlb_last_write_ms
+    type: uint32_t
+    initial_value: '0' # dernière écriture du registre 109 (démarre le délai de garde du gel taper)
+
   # Dernières valeurs calculées par la boucle, exposées en télémétrie (capteurs template ci-dessous).
   - id: dlb_headroom_a
     type: float
@@ -167,10 +190,13 @@ modbus_controller:
   - id: acrel_adl400
     address: 0x0B
     modbus_id: modbus_bus
-    # Défaut ESPHome = 60s. Remonté à 2s pour des données plus fraîches ; le bus est
-    # maintenant à 9600 (au lieu de 38400) pour rester compatible avec l'ETEK, donc
-    # chaque octet prend 4x plus de temps qu'avant -> si des timeouts/"Duplicate
-    # modbus command" apparaissent dans les logs, redescendre cette valeur.
+    # Défaut ESPHome = 60s. Le bus est à 9600 (au lieu de 38400) pour rester compatible avec
+    # l'ETEK, donc chaque octet prend 4x plus de temps qu'avant -> si des timeouts/"Duplicate
+    # modbus command" apparaissent dans les logs, remonter cette valeur.
+    # 2s : un lot de courants L1+L2+L3 (un seul bloc contigu 0x61-0x66) déclenche directement la
+    # boucle DLB (cf. section 4, script etek_dlb). Le headroom n'utilise pas L2, et la détection de fin
+    # de charge est suspendue 6 s après chaque écriture, donc une cadence inférieure à la latence ETEK
+    # (2,7 s à la baisse, 3,6-4,8 s à la hausse) ne provoque pas de va-et-vient.
     update_interval: 2s
 
   # ETEK EKEPC2-C : adresse Modbus fixée à 100 (0x64) via écriture registre 100
@@ -327,6 +353,10 @@ sensor:
     unit_of_measurement: "A"
     on_value:
       - lambda: id(dlb_acrel_l3_ms) = millis();
+      # L3 (0x66) est publié en dernier du bloc 0x61-0x66 : le lot L1+L2+L3 est complet.
+      - script.execute:
+          id: etek_dlb
+          from_watchdog: false
 
   # --- TENSIONS ACREL ---
 
@@ -1015,7 +1045,7 @@ binary_sensor:
     device_class: problem
 
 # =====================================================================
-# 4. BOUCLE DLB (DYNAMIC LOAD BALANCING) ETEK (Toutes les 5s)
+# 4. BOUCLE DLB (DYNAMIC LOAD BALANCING) ETEK (pilotée par les lots Acrel, toutes les 2s)
 # =====================================================================
 # Plafonne le courant de charge ETEK (écriture registre 109, cf. section "number"
 # ci-dessus) pour que le courant total maison (Acrel L1+L2+L3) reste sous la limite
@@ -1023,31 +1053,43 @@ binary_sensor:
 # Headroom brut = limite - (L1+L3), c'est-à-dire ce que tirent déjà les deux autres
 # circuits ; le courant EV L2 mesuré ne sert qu'à détecter la fin de charge (taper).
 #
-# Cadence 5s : assez réactif face à un gros appel de puissance sur L1/L3, sans saturer
-# le bus 9600 bauds déjà partagé avec les lectures Acrel (2s) et ETEK (2s).
+# Cadence pilotée par les données : le script etek_dlb s'exécute dès que le lot de courants
+# Acrel L1+L2+L3 (un seul bloc Modbus, polling 2s) est complet (on_value de L3, publié en dernier),
+# donc sans âge de donnée. Réaction au pire ~2 s (échantillonnage) + 2,7 s (latence ETEK) au lieu
+# de ~10 s avec l'ancien timer 5s. Un lot dont L1/L2/L3 ne datent pas du même instant (< 500 ms)
+# est ignoré. Un superviseur (interval 5s, etek_dlb_watchdog) ne vérifie que la fraîcheur.
+#
+# Les durées de debounce sont en millisecondes (millis()), pas en nombre de cycles : un retry
+# Modbus ne les allonge pas. Un trou > 5 s entre deux lots (2 lectures perdues d'affilée) remet les minuteries à zéro.
 #
 # Écritures registre 109 (une seule par cycle, uniquement si nécessaire) :
 #  - baisse >= 2 A par rapport à la consigne appliquée : immédiate (sécurité disjoncteur) ;
-#  - baisse modérée (0,8 A < écart < 2 A) ou hausse >= 1 A : confirmée sur 2 cycles (~10 s).
+#  - baisse modérée (0,8 A < écart < 2 A) ou hausse >= 1 A : confirmée pendant 5 s (4 lots).
 #    Une consigne qui oscille de moins de 0,8 A autour du headroom n'est jamais réécrite
 #    (supprime le va-et-vient 30/31 A et limite les écritures Modbus sur l'ETEK).
 #
 # Plancher IEC 61851-1 (6 A) : un headroom < 6 A ne met PAS tout de suite en pause. La
 # consigne est d'abord bornée à 6 A ; la pause (registre 89 = 2) n'est déclenchée qu'après
-# 3 cycles consécutifs (~15 s) sous 6 A, et la reprise qu'après 2 cycles > 8 A. Raison : après
+# 15 s continues sous 6 A (9 lots), et la reprise qu'après 9 s continues > 8 A (6 lots, ~10 s). Raison : après
 # un registre 89 = 2 l'ETEK reste en statut 19 (hors service) pendant ~60 s quoi qu'on écrive
 # ensuite, et la voiture signale "charge arrêtée" - une pause doit donc rester exceptionnelle.
 #
 # Fin de charge (taper) : tant que le courant L2 mesuré est > 2 A sous la consigne et que le
 # headroom laisse >= 6 A d'écart au-dessus de ce que tire la voiture, la consigne est gelée
 # (aucune écriture Modbus). Le gel saute dès que la charge d'un autre circuit l'exige.
+# La détection est suspendue 6 s après chaque écriture : L2 met 2,7-4,8 s à rejoindre la consigne,
+# un lot à +2 s ou +4 s verrait sinon une hausse comme une fin de charge.
 #
 # Données périmées : si une lecture Acrel (L1/L2/L3) a plus de 15 s, ou le Linky plus de 300 s
 # (les capteurs teleinfo ne se mettent à jour qu'environ toutes les 100 s), la consigne passe
-# à 10 A (jamais relevée tant qu'on est aveugle) ; la pause éventuelle est conservée.
-interval:
-  - interval: 5s
-    id: etek_dlb
+# à 10 A (jamais relevée tant qu'on est aveugle) ; la pause éventuelle est conservée. C'est le
+# superviseur qui s'en charge si plus aucun lot ne déclenche le script (bus Acrel muet) ; un lot
+# incohérent refusé ne compte pas comme donnée fraîche.
+script:
+  - id: etek_dlb
+    mode: single
+    parameters:
+      from_watchdog: bool   # true : appel du superviseur (fraîcheur uniquement) ; false : lot Acrel complet reçu
     then:
       - lambda: |-
           const int   ETEK_MIN_A = 6;       // plancher IEC 61851
@@ -1070,27 +1112,65 @@ interval:
 
           const float DEADBAND_A = 0.8f;        // écart ignoré entre headroom et consigne appliquée
           const float EMERGENCY_STEP_A = 2.0f;  // baisse >= 2 A : écrite sans attendre
-          const int   UP_CONFIRM = 2;           // cycles consécutifs pour une hausse
-          const int   DOWN_CONFIRM = 2;         // cycles consécutifs pour une baisse modérée
-          const int   PAUSE_CYCLES = 3;         // cycles sous ETEK_MIN_A avant pause (~15 s)
-          const int   RESUME_CYCLES = 2;        // cycles au-dessus de RESUME_HEADROOM_A avant reprise
+          // Durées de confirmation en millisecondes (cadence Acrel nominale 2 s). Seuils placés à mi-chemin
+          // entre deux multiples de 2 s : 5 s = 4 lots (6 s d'observation), 9 s = 6 lots (10 s), 15 s = 9 lots (16 s).
+          // Gigue du bus sans effet sur le nombre de lots : ±0,3 s par intervalle pour la confirmation, ±0,2 s pour la
+          // reprise, ±0,12 s pour la pause (au pire un lot, soit 2 s, de plus ou de moins : sans conséquence).
+          const uint32_t UP_CONFIRM_MS = 5000;      // hausse stable avant écriture
+          const uint32_t DOWN_CONFIRM_MS = 5000;    // baisse modérée stable avant écriture
+          const uint32_t PAUSE_MS = 15000;          // headroom < ETEK_MIN_A en continu avant pause
+          const uint32_t RESUME_MS = 9000;          // headroom > RESUME_HEADROOM_A en continu avant reprise
           const float RESUME_HEADROOM_A = 8.0f;
           const float TAPER_DETECT_A = 2.0f;    // L2 mesuré sous la consigne de plus de ça = fin de charge
           const float TAPER_ROOM_A = 6.0f;      // marge au-dessus de L2 sous laquelle le gel est levé
+          // Après une écriture, L2 met 2,7 s (baisse) à 4,8 s (hausse) à suivre : sans ce délai de garde, le
+          // lot suivant (2 s plus tard) verrait un L2 encore bas et prendrait une hausse pour une fin de charge.
+          const uint32_t WRITE_HOLDOFF_MS = 6000;
           const int   FALLBACK_A = 10;          // consigne en cas de données périmées
           const uint32_t ACREL_STALE_MS = 15000;
           const uint32_t LINKY_STALE_MS = 300000;
           const uint32_t BOOT_GRACE_MS = 20000;
+          const uint32_t BATCH_SPREAD_MS = 500;      // L1/L2/L3 doivent venir du même lot Modbus
+          const uint32_t MAX_BATCH_GAP_MS = 5000;    // trou entre deux lots : les minuteries de debounce repartent de zéro
+
+          const uint32_t now = millis();
+          const uint32_t stamp = now != 0 ? now : 1;   // 0 = minuterie arrêtée
+          auto age = [&](uint32_t t) { return (uint32_t)(now - t); };
+          auto spread = [](uint32_t a, uint32_t b) { return a > b ? a - b : b - a; };
+          auto reset_timers = [&]() {
+            id(etek_dlb_pending_count) = 0;
+            id(dlb_pending_dir) = 0;
+            id(dlb_pending_since_ms) = 0;
+            id(dlb_pause_count) = 0;
+            id(dlb_pause_since_ms) = 0;
+            id(dlb_resume_count) = 0;
+            id(dlb_resume_since_ms) = 0;
+          };
+
+          // ---------- Lot Acrel cohérent (appel déclenché par L3 uniquement) ----------
+          // Un lot refusé ne rafraîchit pas dlb_batch_ms : si cela dure, le superviseur finit par déclarer
+          // les données périmées (aveugle = consigne de secours) au lieu de laisser la boucle muette.
+          const uint32_t prev_batch = id(dlb_batch_ms);
+          if (!from_watchdog) {
+            if (spread(id(dlb_acrel_l1_ms), id(dlb_acrel_l2_ms)) > BATCH_SPREAD_MS ||
+                spread(id(dlb_acrel_l2_ms), id(dlb_acrel_l3_ms)) > BATCH_SPREAD_MS ||
+                spread(id(dlb_acrel_l1_ms), id(dlb_acrel_l3_ms)) > BATCH_SPREAD_MS) {
+              ESP_LOGW("etek_dlb", "DLB: lot Acrel incohérent (L1/L2/L3 espacés de plus de %u ms), ignoré",
+                       (unsigned) BATCH_SPREAD_MS);
+              return;
+            }
+            id(dlb_batch_ms) = stamp;
+          }
 
           // ---------- Fraîcheur des données ----------
-          const uint32_t now = millis();
           bool stale = !(id(acrel_current_l1).has_state() && id(acrel_current_l2).has_state() &&
                          id(acrel_current_l3).has_state() && id(linky_pref).has_state());
           if (!stale) {
-            stale = (uint32_t)(now - id(dlb_acrel_l1_ms)) > ACREL_STALE_MS ||
-                    (uint32_t)(now - id(dlb_acrel_l2_ms)) > ACREL_STALE_MS ||
-                    (uint32_t)(now - id(dlb_acrel_l3_ms)) > ACREL_STALE_MS ||
-                    (uint32_t)(now - id(dlb_linky_ms)) > LINKY_STALE_MS ||
+            stale = age(id(dlb_acrel_l1_ms)) > ACREL_STALE_MS ||
+                    age(id(dlb_acrel_l2_ms)) > ACREL_STALE_MS ||
+                    age(id(dlb_acrel_l3_ms)) > ACREL_STALE_MS ||
+                    age(id(dlb_batch_ms)) > ACREL_STALE_MS ||
+                    age(id(dlb_linky_ms)) > LINKY_STALE_MS ||
                     std::isnan(id(acrel_current_l1).state) || std::isnan(id(acrel_current_l2).state) ||
                     std::isnan(id(acrel_current_l3).state) || std::isnan(id(linky_pref).state) ||
                     id(linky_pref).state < 1.0f;
@@ -1103,14 +1183,22 @@ interval:
             if (id(etek_dlb_enabled) != 2 && (last < 0 || last > FALLBACK_A)) {
               id(etek_epc2_reg109).make_call().set_value(FALLBACK_A * REG109_SCALE).perform();
               id(etek_dlb_last_current_a) = FALLBACK_A;
+              id(dlb_last_write_ms) = stamp;
               ESP_LOGW("etek_dlb", "DLB: données périmées -> consigne de secours %dA (reg109=%d)",
                        FALLBACK_A, FALLBACK_A * REG109_SCALE);
             }
-            id(etek_dlb_pending_count) = 0;
-            id(dlb_pending_dir) = 0;
-            id(dlb_pause_count) = 0;
-            id(dlb_resume_count) = 0;
+            reset_timers();
             return;
+          }
+
+          // Le superviseur ne sert qu'à détecter la perte des données : jamais de debounce ni d'écriture normale.
+          if (from_watchdog) return;
+
+          // Trou entre deux lots (retries Modbus...) : on ne déduit rien d'observations espacées de plus de 5 s.
+          if (prev_batch != 0 && age(prev_batch) > MAX_BATCH_GAP_MS) {
+            ESP_LOGD("etek_dlb", "DLB: trou de %u ms entre deux lots, minuteries remises à zéro",
+                     (unsigned) age(prev_batch));
+            reset_timers();
           }
 
           // ---------- Mesures et headroom ----------
@@ -1132,8 +1220,10 @@ interval:
           auto write_cap = [&](int amps, const char *why) {
             id(etek_epc2_reg109).make_call().set_value(amps * REG109_SCALE).perform();
             id(etek_dlb_last_current_a) = amps;
+            id(dlb_last_write_ms) = stamp;
             id(etek_dlb_pending_count) = 0;
             id(dlb_pending_dir) = 0;
+            id(dlb_pending_since_ms) = 0;
             ESP_LOGI("etek_dlb", "DLB: %s -> cible=%dA (headroom=%.1fA, L2=%.1fA, total=%.1f/%.1fA) -> reg109=%d",
                      why, amps, headroom, l2, total, limit, amps * REG109_SCALE);
           };
@@ -1149,18 +1239,23 @@ interval:
             id(dlb_frozen) = 0;
             if (headroom > RESUME_HEADROOM_A) {
               id(dlb_resume_count) += 1;
+              if (id(dlb_resume_since_ms) == 0) id(dlb_resume_since_ms) = stamp;
             } else {
               id(dlb_resume_count) = 0;
+              id(dlb_resume_since_ms) = 0;
             }
-            if (id(dlb_resume_count) < RESUME_CYCLES) {
-              ESP_LOGD("etek_dlb", "DLB: en pause (headroom=%.1fA, reprise %d/%d)",
-                       headroom, id(dlb_resume_count), RESUME_CYCLES);
+            if (id(dlb_resume_since_ms) == 0 || age(id(dlb_resume_since_ms)) < RESUME_MS) {
+              ESP_LOGD("etek_dlb", "DLB: en pause (headroom=%.1fA, reprise %u/%u ms)",
+                       headroom, id(dlb_resume_since_ms) == 0 ? 0u : (unsigned) age(id(dlb_resume_since_ms)),
+                       (unsigned) RESUME_MS);
               return;
             }
             id(etek_epc2_reg89).make_call().set_value(0).perform();
             id(etek_dlb_enabled) = 0;
             id(dlb_resume_count) = 0;
+            id(dlb_resume_since_ms) = 0;
             id(dlb_pause_count) = 0;
+            id(dlb_pause_since_ms) = 0;
             id(etek_dlb_last_current_a) = -1;   // force une écriture de consigne à la reprise
             ESP_LOGI("etek_dlb", "DLB: reprise de la charge (headroom=%.1fA)", headroom);
           }
@@ -1168,35 +1263,44 @@ interval:
           int last = id(etek_dlb_last_current_a);
 
           // ---------- Fin de charge : consigne gelée ----------
-          const bool tapering = last >= 0 && l2 < (float) last - TAPER_DETECT_A;
+          // Pas de détection pendant WRITE_HOLDOFF_MS après une écriture : L2 n'a pas encore rejoint la consigne.
+          const bool in_holdoff = id(dlb_last_write_ms) != 0 && age(id(dlb_last_write_ms)) < WRITE_HOLDOFF_MS;
+          const bool tapering = last >= 0 && !in_holdoff && l2 < (float) last - TAPER_DETECT_A;
           const bool freeze = tapering && headroom >= l2 + TAPER_ROOM_A;
           id(dlb_frozen) = freeze ? 1 : 0;
           if (freeze) {
             id(etek_dlb_pending_count) = 0;
             id(dlb_pending_dir) = 0;
+            id(dlb_pending_since_ms) = 0;
             id(dlb_pause_count) = 0;
+            id(dlb_pause_since_ms) = 0;
             ESP_LOGD("etek_dlb", "DLB: taper (L2=%.1fA < consigne %dA), consigne gelée", l2, last);
             return;
           }
 
-          // ---------- Pause après 3 cycles sous le plancher ----------
+          // ---------- Pause après 15 s sous le plancher ----------
           if (headroom < (float) ETEK_MIN_A) {
             id(dlb_pause_count) += 1;
-            if (id(dlb_pause_count) >= PAUSE_CYCLES) {
+            if (id(dlb_pause_since_ms) == 0) id(dlb_pause_since_ms) = stamp;
+            if (age(id(dlb_pause_since_ms)) >= PAUSE_MS) {
               id(etek_epc2_reg89).make_call().set_value(2).perform();
               id(etek_dlb_enabled) = 2;
               id(dlb_pause_count) = 0;
+              id(dlb_pause_since_ms) = 0;
               id(dlb_resume_count) = 0;
+              id(dlb_resume_since_ms) = 0;
               id(etek_dlb_pending_count) = 0;
               id(dlb_pending_dir) = 0;
-              ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA depuis %d cycles -> pause charge",
-                       headroom, ETEK_MIN_A, PAUSE_CYCLES);
+              id(dlb_pending_since_ms) = 0;
+              ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA depuis %u ms -> pause charge",
+                       headroom, ETEK_MIN_A, (unsigned) PAUSE_MS);
               return;
             }
-            ESP_LOGD("etek_dlb", "DLB: headroom=%.1fA < %dA, borné à %dA (%d/%d avant pause)",
-                     headroom, ETEK_MIN_A, ETEK_MIN_A, id(dlb_pause_count), PAUSE_CYCLES);
+            ESP_LOGD("etek_dlb", "DLB: headroom=%.1fA < %dA, borné à %dA (%u/%u ms avant pause)",
+                     headroom, ETEK_MIN_A, ETEK_MIN_A, (unsigned) age(id(dlb_pause_since_ms)), (unsigned) PAUSE_MS);
           } else {
             id(dlb_pause_count) = 0;
+            id(dlb_pause_since_ms) = 0;
           }
 
           // ---------- Consigne : bande morte + confirmation ----------
@@ -1213,8 +1317,9 @@ interval:
             } else {
               id(dlb_pending_dir) = -1;
               id(etek_dlb_pending_count) = 1;
+              id(dlb_pending_since_ms) = stamp;
             }
-            if (id(etek_dlb_pending_count) >= DOWN_CONFIRM) {
+            if (age(id(dlb_pending_since_ms)) >= DOWN_CONFIRM_MS) {
               write_cap(want, "baisse confirmée");
             }
           } else if (want > last) {
@@ -1224,18 +1329,31 @@ interval:
             } else {
               id(dlb_pending_dir) = 1;
               id(etek_dlb_pending_count) = 1;
+              id(dlb_pending_since_ms) = stamp;
               id(etek_dlb_pending_target_a) = want;
             }
-            if (id(etek_dlb_pending_count) >= UP_CONFIRM) {
+            if (age(id(dlb_pending_since_ms)) >= UP_CONFIRM_MS) {
               write_cap(id(etek_dlb_pending_target_a), "hausse confirmée");
             } else {
-              ESP_LOGD("etek_dlb", "DLB: hausse candidate=%dA (actuel=%dA), confirmation %d/%d",
-                       want, last, id(etek_dlb_pending_count), UP_CONFIRM);
+              ESP_LOGD("etek_dlb", "DLB: hausse candidate=%dA (actuel=%dA), confirmation %u/%u ms",
+                       want, last, (unsigned) age(id(dlb_pending_since_ms)), (unsigned) UP_CONFIRM_MS);
             }
           } else {
             id(etek_dlb_pending_count) = 0;
             id(dlb_pending_dir) = 0;
+            id(dlb_pending_since_ms) = 0;
           }
+
+interval:
+  # Superviseur : ne fait QUE vérifier la fraîcheur des données (Acrel 15 s / Linky 300 s) quand plus
+  # aucun lot Acrel ne déclenche le script, et applique alors la consigne de secours 10 A. N'avance
+  # aucun debounce et n'écrit jamais de consigne normale.
+  - interval: 5s
+    id: etek_dlb_watchdog
+    then:
+      - script.execute:
+          id: etek_dlb
+          from_watchdog: true
 
 logger:
   level: DEBUG
