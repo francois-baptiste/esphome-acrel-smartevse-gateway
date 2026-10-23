@@ -101,7 +101,7 @@ not refreshed, so the supervisor still declares stale after 15 s); debounce time
 batches (2 lost reads in a row) resets the timers; taper detection suspended 6 s after any register-109 write (L2 needs 2.7-4.8 s to follow).
 Timings: confirmation 5 s (4 batches, 6 s observed), resume 9 s (6 batches, 10 s), pause 15 s (9 batches, 16 s), or 45 s when the car is already at the 6 A floor and total < 40 A (see table);
 thresholds sit between multiples of 2 s; bus jitter changes the batch count only beyond +-0.3 s (confirmation),
-+-0.2 s (resume) or +-0.12 s (pause) per interval, and then by one batch (2 s) at worst. The table below gives the previous d2e39ee values; the bracketed values are the ones now flashed.
++-0.2 s (resume) or +-0.12 s (pause) per interval, and then by one batch (2 s) at worst. The table below gives the previous d2e39ee values; the bracketed values are the ones now flashed (the 45 s floor pause too, since 2026-10-23).
 
 limit = PREF x 1000 / 200 x **1.10** (= 33 A at 6 kVA); headroom = limit - (L1 + L3) - **0.3 A** margin;
 bounded to 6..32 A (IEC 61851 floor, circuit maximum). The Linky overshoot bit (STGE, set whenever S > PREF,
@@ -113,7 +113,7 @@ i.e. permanently above ~26 A) is deliberately NOT used.
 | drop >= 2 A | written immediately |
 | moderate drop (0.8-2 A) / rise >= 1 A | confirmed on 2 consecutive cycles [now: held 5 s] (rise uses the most prudent value of the window) |
 | headroom < 6 A | clamped to 6 A; **pause (reg 89 = 2) only after 3 consecutive cycles** [now: 15 s continuous] |
-| pause delay with the car at the floor | applied setpoint 6 A and L2 <= 6.5 A and total < 40 A: **45 s** (`PAUSE_FLOOR_MS`) instead of 15 s. Total >= 40 A continuously for 15 s (own timer `dlb_pause_heavy_since_ms`, a one-batch spike does not count) or L2 not following the setpoint: back to 15 s. Not yet flashed; the paragraph above describes the flashed firmware until then |
+| pause delay with the car at the floor | applied setpoint 6 A and L2 <= 6.5 A and total < 40 A: **45 s** (`PAUSE_FLOOR_MS`) instead of 15 s. Total >= 40 A continuously for 15 s (own timer `dlb_pause_heavy_since_ms`, a one-batch spike does not count) or L2 not following the setpoint: back to 15 s. Flashed 2026-10-23 (c4f864a); NOT yet verified on a real charge with a house peak |
 | resume (reg 89 = 0) | headroom > 8 A for 2 cycles [now: 9 s], then the setpoint is rewritten |
 | taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes [now: not evaluated for 6 s after a write] |
 | stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint 10 A (never raised while blind), pause kept; 20 s boot grace |
@@ -197,6 +197,9 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 
 ## Current status
 
+- Latest flash: 2026-10-23 ~23:45 CEST (21:45 UTC) = `config.yaml` at c4f864a (pause 45 s with the car at the 6 A floor), OTA with the
+  car idle (status 1, L2 0.03 A). 70 s capture afterwards: 34 DLB runs (~2.06 s), applied 22 A read back 22 A, no stale flag,
+  no pause, no Modbus error (only 'took a long time' warnings of 58-71 ms), no reboot. Earlier flash:
 - `master` = the commit that adds the 2 s event-driven DLB (see `git log`). Flashed firmware = that `config.yaml`,
   OTA-flashed 2026-10-22 ~02:45 CEST (00:45 UTC) with the car idle (status 3, L2 <= 0.09 A for 2 h 15 min after the
   charge ended at ~22:30 UTC; status 3, not 1, is the usual idle value here), ESPHome 2026.7.0.
