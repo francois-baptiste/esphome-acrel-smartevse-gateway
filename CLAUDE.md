@@ -186,6 +186,12 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
   back to 31.6 A on the next sample), 40.6 A at 20:34:55, 41.0 A at 20:50:10; each lasted 1-2 samples. This is the
   ~6-15 s reaction time (5 s timer + Acrel age + 2.7 s ETEK), the motivation for the event-driven DLB draft.
 - 2026-10-12 14:53: "aggressive" mode (1.10 x breaker) introduced; ~32-33 A total ran for hours without a trip.
+- 2026-10-23: the owner checked the official Enedis Linky 30-min load curve (April-October 2026): 185 intervals at
+  7 kW (incl. 3.5 h on 19-20 Oct and 1.5 h on 21-22 Oct) and 10 consecutive intervals (5 h, 21 July) at 8 kW (~32.8 A at
+  238 V, ~7.8 kVA), zero Linky trips. This supports the Enedis calibration in amperes at the 200 V reference
+  (6000 / 200 = 30 A, 1.10 x = 33 A), not a 6600 VA limit. A VA-based headroom (6600 VA / U) was drafted and dropped
+  (never committed): at 238 V it capped the car at ~22 A instead of ~29 A (replay). Keep the ampere formula and the
+  0.3 A margin.
 - Older SmartEVSE-era nights (Jul-Aug) show 2-30 current steps/h; ETEK 19 Oct (before d2e39ee) 11.7 steps/h.
 
 ## Current status
@@ -233,5 +239,5 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 2. Teleinfo logs `[E][teleinfo] bad crc` about once a minute: Linky line noise, harmless, Linky values still update.
 3. `dlb_donnees_perimees` is 1 for a few seconds after every boot (normal: no reading yet; the 20 s boot grace
    prevents a fallback write).
-4. Aggressive mode (1.10 x breaker) rests on an unverified assumption about the breaker curve; ~33 A total has
+4. Aggressive mode (1.10 x breaker) is backed by the Enedis 30-min load curve (see History 2026-10-23), not by Enedis documentation; ~33 A total has
    run for hours without a trip. Keep `ETEK_MAX_A` = 32 and the 33 A limit unless the owner changes them.
