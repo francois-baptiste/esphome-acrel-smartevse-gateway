@@ -104,6 +104,10 @@ globals:
     type: uint32_t
     initial_value: '0' # début de la période continue sous le plancher 6 A
 
+  - id: dlb_pause_heavy_since_ms
+    type: uint32_t
+    initial_value: '0' # début de la période continue sous 6 A avec un total >= 40 A (dépassement massif)
+
   - id: dlb_resume_since_ms
     type: uint32_t
     initial_value: '0' # début de la période continue au-dessus du seuil de reprise
@@ -1073,6 +1077,10 @@ binary_sensor:
 # 15 s continues sous 6 A (9 lots), et la reprise qu'après 9 s continues > 8 A (6 lots, ~10 s). Raison : après
 # un registre 89 = 2 l'ETEK reste en statut 19 (hors service) pendant ~60 s quoi qu'on écrive
 # ensuite, et la voiture signale "charge arrêtée" - une pause doit donc rester exceptionnelle.
+# Voiture déjà au plancher (consigne 6 A et L2 <= 6,5 A) : la pause ne retire que 6 A et un léger dépassement
+# (total < 40 A, soit < 1,33 x In, très loin du déclenchement thermique en quelques dizaines de secondes) ne
+# justifie pas une coupure : le délai passe à 45 s (bouilloire, micro-ondes). Un dépassement massif (total >= 40 A
+# en continu depuis 15 s) ou une voiture qui ne suit pas sa consigne garde le délai court de 15 s.
 #
 # Fin de charge (taper) : tant que le courant L2 mesuré est > 2 A sous la consigne et que le
 # headroom laisse >= 6 A d'écart au-dessus de ce que tire la voiture, la consigne est gelée
@@ -1119,6 +1127,10 @@ script:
           const uint32_t UP_CONFIRM_MS = 5000;      // hausse stable avant écriture
           const uint32_t DOWN_CONFIRM_MS = 5000;    // baisse modérée stable avant écriture
           const uint32_t PAUSE_MS = 15000;          // headroom < ETEK_MIN_A en continu avant pause
+          // Voiture déjà au plancher et total modéré : on tolère un dépassement plus long avant de couper.
+          const uint32_t PAUSE_FLOOR_MS = 45000;    // idem, voiture au plancher et total < PAUSE_HEAVY_A
+          const float PAUSE_FLOOR_L2_A = 6.5f;      // L2 mesuré <= ça = la voiture est vraiment au plancher
+          const float PAUSE_HEAVY_A = 40.0f;        // total >= ça pendant PAUSE_MS : délai court (pause réactive)
           const uint32_t RESUME_MS = 9000;          // headroom > RESUME_HEADROOM_A en continu avant reprise
           const float RESUME_HEADROOM_A = 8.0f;
           const float TAPER_DETECT_A = 2.0f;    // L2 mesuré sous la consigne de plus de ça = fin de charge
@@ -1143,6 +1155,7 @@ script:
             id(dlb_pending_since_ms) = 0;
             id(dlb_pause_count) = 0;
             id(dlb_pause_since_ms) = 0;
+            id(dlb_pause_heavy_since_ms) = 0;
             id(dlb_resume_count) = 0;
             id(dlb_resume_since_ms) = 0;
           };
@@ -1256,6 +1269,7 @@ script:
             id(dlb_resume_since_ms) = 0;
             id(dlb_pause_count) = 0;
             id(dlb_pause_since_ms) = 0;
+            id(dlb_pause_heavy_since_ms) = 0;
             id(etek_dlb_last_current_a) = -1;   // force une écriture de consigne à la reprise
             ESP_LOGI("etek_dlb", "DLB: reprise de la charge (headroom=%.1fA)", headroom);
           }
@@ -1274,33 +1288,45 @@ script:
             id(dlb_pending_since_ms) = 0;
             id(dlb_pause_count) = 0;
             id(dlb_pause_since_ms) = 0;
+            id(dlb_pause_heavy_since_ms) = 0;
             ESP_LOGD("etek_dlb", "DLB: taper (L2=%.1fA < consigne %dA), consigne gelée", l2, last);
             return;
           }
 
-          // ---------- Pause après 15 s sous le plancher ----------
+          // ---------- Pause après 15 s (45 s voiture au plancher) sous le plancher ----------
           if (headroom < (float) ETEK_MIN_A) {
             id(dlb_pause_count) += 1;
             if (id(dlb_pause_since_ms) == 0) id(dlb_pause_since_ms) = stamp;
-            if (age(id(dlb_pause_since_ms)) >= PAUSE_MS) {
+            // Dépassement massif : sa propre minuterie, pour qu'un pic d'un seul lot ne raccourcisse pas une attente en cours.
+            if (total >= PAUSE_HEAVY_A) {
+              if (id(dlb_pause_heavy_since_ms) == 0) id(dlb_pause_heavy_since_ms) = stamp;
+            } else {
+              id(dlb_pause_heavy_since_ms) = 0;
+            }
+            const bool car_at_floor = last >= 0 && last <= ETEK_MIN_A && l2 <= PAUSE_FLOOR_L2_A;
+            const bool heavy = id(dlb_pause_heavy_since_ms) != 0 && age(id(dlb_pause_heavy_since_ms)) >= PAUSE_MS;
+            const uint32_t pause_ms = (car_at_floor && !heavy) ? PAUSE_FLOOR_MS : PAUSE_MS;
+            if (age(id(dlb_pause_since_ms)) >= pause_ms) {
               id(etek_epc2_reg89).make_call().set_value(2).perform();
               id(etek_dlb_enabled) = 2;
               id(dlb_pause_count) = 0;
               id(dlb_pause_since_ms) = 0;
+              id(dlb_pause_heavy_since_ms) = 0;
               id(dlb_resume_count) = 0;
               id(dlb_resume_since_ms) = 0;
               id(etek_dlb_pending_count) = 0;
               id(dlb_pending_dir) = 0;
               id(dlb_pending_since_ms) = 0;
-              ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA depuis %u ms -> pause charge",
-                       headroom, ETEK_MIN_A, (unsigned) PAUSE_MS);
+              ESP_LOGI("etek_dlb", "DLB: headroom=%.1fA < %dA depuis %u ms (total=%.1fA, L2=%.1fA) -> pause charge",
+                       headroom, ETEK_MIN_A, (unsigned) pause_ms, total, l2);
               return;
             }
             ESP_LOGD("etek_dlb", "DLB: headroom=%.1fA < %dA, borné à %dA (%u/%u ms avant pause)",
-                     headroom, ETEK_MIN_A, ETEK_MIN_A, (unsigned) age(id(dlb_pause_since_ms)), (unsigned) PAUSE_MS);
+                     headroom, ETEK_MIN_A, ETEK_MIN_A, (unsigned) age(id(dlb_pause_since_ms)), (unsigned) pause_ms);
           } else {
             id(dlb_pause_count) = 0;
             id(dlb_pause_since_ms) = 0;
+            id(dlb_pause_heavy_since_ms) = 0;
           }
 
           // ---------- Consigne : bande morte + confirmation ----------

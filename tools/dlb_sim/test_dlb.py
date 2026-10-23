@@ -160,18 +160,18 @@ s.tick(2.5, 1.0)
 w = writes(new, 109)
 check("rise written at the 4th batch (6 s) at the prudent value 29", len(w) == 2 and amps(w)[-1] == 29, str(amps(w)))
 
-print("== S5 short dips below 6 A are clamped, pause only after 15 s ==")
+print("== S5 massive overshoot (total >= 40 A) below 6 A: clamped, pause after 15 s ==")
 s = Sim(new)
 s.tick(2.0, 1.0)
 for _ in range(8):
-    s.tick(20.0, 10.0)   # 14 s below the floor
+    s.tick(25.0, 12.0)   # 14 s below the floor
 check("clamped to 6 A, no pause after 14 s", amps(writes(new, 109))[-1] == 6 and new.h_get(1) == 0)
 s.tick(2.0, 1.0)
 check("pause timer reset when headroom recovers", new.h_get(4) == 0 and new.h_get(9) == 0)
 for _ in range(8):
-    s.tick(20.0, 10.0)
+    s.tick(25.0, 12.0)
 check("still no pause after 14 s again", new.h_get(1) == 0)
-s.tick(20.0, 10.0)
+s.tick(25.0, 12.0)
 check("pause after 16 s observed (9th batch, threshold 15 s)", new.h_get(1) == 2 and amps(writes(new, 89))[-1] == "reg89=2")
 n = new.h_nwrites()
 for _ in range(5):
@@ -182,7 +182,7 @@ check("resume after 6 batches (10 s, threshold 9 s): reg89=0 then reg109", amps(
 s2 = Sim(new)
 s2.tick(2.0, 1.0)
 for _ in range(9):
-    s2.tick(20.0, 10.0)
+    s2.tick(25.0, 12.0)
 n = new.h_nwrites()
 s2.tick(25.0, 6.0)
 s2.tick(26.0, 4.0)
@@ -190,6 +190,56 @@ s2.tick(23.0, 4.0)   # headroom 6 (< 8)
 for _ in range(8):
     s2.tick(25.0, 4.0)
 check("paused stays paused while headroom < 8", new.h_get(1) == 2 and new.h_nwrites() == n)
+
+print("== S5b house peak with the car at the 6 A floor: no pause for 45 s ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(15):
+    s.tick(20.0, 10.0)   # 30 s above the floor, total 36 A (< 40 A), car at 6 A
+check("S5b 30 s peak: car at 6 A, no pause, no reg89 write",
+      new.h_get(0) == 6 and new.h_get(1) == 0 and not writes(new, 89)[1:], str(amps(writes(new))))
+s.tick(2.0, 1.0)
+check("S5b peak over: timers reset, still no pause", new.h_get(1) == 0 and new.h_get(9) == 0 and new.h_get(13) == 0)
+for _ in range(6):
+    s.tick(2.0, 1.0)
+check("S5b setpoint comes back up afterwards (no status 19)", new.h_get(1) == 0 and amps(writes(new, 109))[-1] > 6)
+
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(23):
+    s.tick(20.0, 10.0)   # 44 s observed
+check("S5b no pause after 44 s at the floor", new.h_get(1) == 0)
+s.tick(20.0, 10.0)       # 46 s observed, threshold 45 s
+check("S5b pause after 46 s at the floor (threshold 45 s)", new.h_get(1) == 2 and amps(writes(new, 89))[-1] == "reg89=2")
+
+print("== S5c massive overshoot while the car is at the floor stays reactive ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(8):
+    s.tick(25.0, 12.0)   # total 43 A
+check("S5c no pause after 14 s", new.h_get(1) == 0)
+s.tick(25.0, 12.0)
+check("S5c pause after 16 s at total >= 40 A", new.h_get(1) == 2)
+
+print("== S5d a short heavy spike does not shorten a running 45 s wait ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(15):
+    s.tick(20.0, 10.0)   # 30 s moderate
+s.tick(25.0, 12.0)       # a single heavy sample (total 43 A)
+check("S5d one heavy sample after 30 s: no pause", new.h_get(1) == 0)
+s.tick(20.0, 10.0)
+check("S5d heavy timer reset when total drops back below 40 A", new.h_get(13) == 0 and new.h_get(1) == 0)
+for _ in range(9):
+    s.tick(25.0, 12.0)   # heavy again for 16 s
+check("S5d sustained heavy for 16 s: pause", new.h_get(1) == 2)
+
+print("== S5e car not following its setpoint keeps the 15 s delay ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(9):
+    s.tick(20.0, 10.0, l2=12.0)   # setpoint 6 A but L2 stays at 12 A
+check("S5e L2 well above the floor: pause after 16 s", new.h_get(1) == 2)
 
 print("== S6 taper: frozen unless the house load needs a lower cap ==")
 s = Sim(new)

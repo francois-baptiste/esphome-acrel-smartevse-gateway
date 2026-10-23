@@ -99,7 +99,7 @@ of the 0x61-0x66 block, so L1/L2/L3 are one batch); a supervisor `interval: 5s` 
 Safeguards: batch spread L1/L2/L3 timestamps must be < 500 ms else the batch is ignored (and `dlb_batch_ms` is
 not refreshed, so the supervisor still declares stale after 15 s); debounce timers in `millis()`; a gap > 5 s between
 batches (2 lost reads in a row) resets the timers; taper detection suspended 6 s after any register-109 write (L2 needs 2.7-4.8 s to follow).
-Timings: confirmation 5 s (4 batches, 6 s observed), resume 9 s (6 batches, 10 s), pause 15 s (9 batches, 16 s);
+Timings: confirmation 5 s (4 batches, 6 s observed), resume 9 s (6 batches, 10 s), pause 15 s (9 batches, 16 s), or 45 s when the car is already at the 6 A floor and total < 40 A (see table);
 thresholds sit between multiples of 2 s; bus jitter changes the batch count only beyond +-0.3 s (confirmation),
 +-0.2 s (resume) or +-0.12 s (pause) per interval, and then by one batch (2 s) at worst. The table below gives the previous d2e39ee values; the bracketed values are the ones now flashed.
 
@@ -113,6 +113,7 @@ i.e. permanently above ~26 A) is deliberately NOT used.
 | drop >= 2 A | written immediately |
 | moderate drop (0.8-2 A) / rise >= 1 A | confirmed on 2 consecutive cycles [now: held 5 s] (rise uses the most prudent value of the window) |
 | headroom < 6 A | clamped to 6 A; **pause (reg 89 = 2) only after 3 consecutive cycles** [now: 15 s continuous] |
+| pause delay with the car at the floor | applied setpoint 6 A and L2 <= 6.5 A and total < 40 A: **45 s** (`PAUSE_FLOOR_MS`) instead of 15 s. Total >= 40 A continuously for 15 s (own timer `dlb_pause_heavy_since_ms`, a one-batch spike does not count) or L2 not following the setpoint: back to 15 s. Not yet flashed; the paragraph above describes the flashed firmware until then |
 | resume (reg 89 = 0) | headroom > 8 A for 2 cycles [now: 9 s], then the setpoint is rewritten |
 | taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes [now: not evaluated for 6 s after a write] |
 | stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint 10 A (never raised while blind), pause kept; 20 s boot grace |
@@ -215,7 +216,7 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 ## Checklist after the next charging session
 
 1. `dlb_consigne_appliquee` changes per charging hour (query above): expect <= ~4/h (old logic 14.8/h).
-2. `etek_epc2_statut` never 19 and `dlb_pause` stays 0 unless the house really exceeded the limit for > 15 s;
+2. `etek_epc2_statut` never 19 and `dlb_pause` stays 0 unless the house really exceeded the limit for > 45 s at the 6 A floor (> 15 s if total >= 40 A);
    no BMW "charging stopped" notifications.
 3. `dlb_courant_total_mesure` <= `dlb_limite_totale` + ~0.6 A almost always (replay: 8 % of cycles slightly above).
 4. `dlb_gel_taper` = 1 during the end-of-charge taper with no register writes in that period.

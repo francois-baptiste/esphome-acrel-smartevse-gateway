@@ -39,7 +39,7 @@ static Reg etek_epc2_reg109{109}, etek_epc2_reg89{89};
 static int etek_dlb_last_current_a = -1, etek_dlb_enabled = -1, etek_dlb_pending_target_a = 0, etek_dlb_pending_count = 0;
 static int dlb_pending_dir = 0, dlb_pause_count = 0, dlb_resume_count = 0, dlb_target_a = 0, dlb_frozen = 0, dlb_stale = 0;
 static uint32_t dlb_acrel_l1_ms = 0, dlb_acrel_l2_ms = 0, dlb_acrel_l3_ms = 0, dlb_linky_ms = 0;
-static uint32_t dlb_batch_ms = 0, dlb_pending_since_ms = 0, dlb_pause_since_ms = 0, dlb_resume_since_ms = 0, dlb_last_write_ms = 0;
+static uint32_t dlb_batch_ms = 0, dlb_pending_since_ms = 0, dlb_pause_since_ms = 0, dlb_pause_heavy_since_ms = 0, dlb_resume_since_ms = 0, dlb_last_write_ms = 0;
 static float dlb_headroom_a = 0, dlb_limit_a = 0, dlb_total_a = 0;
 '''
 
@@ -50,7 +50,7 @@ void h_reset() {
   etek_dlb_last_current_a = -1; etek_dlb_enabled = -1; etek_dlb_pending_target_a = 0; etek_dlb_pending_count = 0;
   dlb_pending_dir = 0; dlb_pause_count = 0; dlb_resume_count = 0; dlb_target_a = 0; dlb_frozen = 0; dlb_stale = 0;
   dlb_acrel_l1_ms = dlb_acrel_l2_ms = dlb_acrel_l3_ms = dlb_linky_ms = 0;
-  dlb_batch_ms = dlb_pending_since_ms = dlb_pause_since_ms = dlb_resume_since_ms = dlb_last_write_ms = 0;
+  dlb_batch_ms = dlb_pending_since_ms = dlb_pause_since_ms = dlb_pause_heavy_since_ms = dlb_resume_since_ms = dlb_last_write_ms = 0;
   acrel_current_l1 = Sens(); acrel_current_l2 = Sens(); acrel_current_l3 = Sens(); linky_pref = Sens(); linky_urms1 = Sens();
 }
 void h_verbose(int v) { g_verbose = v; }
@@ -88,6 +88,7 @@ int h_get(int what) {
     case 10: return (int) dlb_last_write_ms;
     case 11: return (int) dlb_batch_ms;
     case 12: return (int) dlb_pending_since_ms;
+    case 13: return (int) dlb_pause_heavy_since_ms;
   }
   return -999;
 }
