@@ -62,6 +62,26 @@ as annotated CSV from `tools/flux.sh`) through the old (`--baseline`) and workin
 (ETEK latency 2.7 s down / 4.2 s up). Draft result (2 s Acrel batches), old -> draft: 19-20 Oct night 3.9 -> 3.6 writes/h, 8.4 -> 8.1 % of time above the
 limit, 0.16 -> 0.10 % above limit+1.5 A; 21 Oct charge 10.2 -> 10.7 writes/h, 0.27 -> 0.21 % above limit+1.5 A, peak
 17.6 -> 16.4 A. The gain is ~2-3 s per load step, not a different regime: big house steps are still seen for one sample.
+`tools/dlb_sim/stress.py` (+ `model.py`) is the long backtest: days of synthetic house load (appliances) and nightly charge sessions
+(end-of-charge taper, dips, car-side pauses) or the real CSV (`--csv`), through the real lambda, with fault injection (profiles
+`clean`, `faults`, `hostile`, `reboot15`, `lostwrites`: ESP reboots with boot time and delayed first Linky frame, Acrel/Linky outages,
+lost batches, lost register writes, `--millis-start` for the uint32 wrap) and a thermal model of the Linky breaker (nominal tau 600 s /
+pessimistic 150 s, no trip below 1.14 x In = 34.2 A; assumptions in `model.py`). It compares a no-DLB control (proves the model trips),
+`--baseline` (default `c4f864a^`), the working tree and `--variant NAME=VALUE` (constant override). `test_dlb.py` S15-S22 cover reboot
+(mid-charge, paused, taper), millis wrap, taper transitions, disconnections, breaker calibration and a 2-day smoke run.
+Results 2026-10-24 (4 seeds x 14 days, working tree vs flashed c4f864a/3f24497; heavy = `--load-scale 2.5 --house-max 31`):
+`clean`, `wrap` (millis() crossing 2^32) and the 62 h real CSV (3.6 % of time above 33 A, 0.13 % above 34.5 A, 4.3 writes/h): nominal
+breaker never trips, no write ever lands while frozen, behaviour identical to the flashed one except pauses. The 45 s floor pause cuts
+pauses 20-25 % but, in a house forced to 31 A, lengthens the longest episode above limit+3 A from 18 s to 48 s (with
+`PAUSE_FLOOR_MS=15000` the results equal the old logic). The idle-car guard (no pause when L2 < 0.5 A) cuts pauses/day from 1.14 to 0.09
+(heavy: 8.1 to 0.7), all remaining ones being with a charging car, and the taper/idle register writes by ~60 %.
+Known limits (the stress profiles `faults`, `hostile`, `reboot15`, `lostwrites` report them as WARN): (1) FALLBACK_A = 32, an explicit
+owner choice (blind = full power, the Linky trips rather than a degraded mode): with 6 Acrel outages + 2 reboots/day (synthetic `faults`)
+the nominal breaker trips ~12 times in 56 days, versus 0 with the old 10 A fallback (`--variant FALLBACK_A=6`: no trip, ~3 % less
+energy); (2) the same 32 A applies after every ESP reboot until the first Linky frame (up to ~100 s: boot grace 20 s, PREF needed),
+so an OTA flash or a brown-out DURING a charge puts the car at 32 A for that time: flash with the car idle; (3) a lost reg 109 write is
+never retried (no read-back check): 5 % loss gives episodes up to 550-1150 s and nominal trips; (4) `millis() == 0` exactly flags one
+stale cycle (harmless).
 Quick checks, in order: `esphome config`, the g++ harness, `compile --only-generate`; the real `compile` is the
 final one (the toolchain is cached in this WSL, so it works from a worktree).
 
@@ -95,7 +115,7 @@ final one (the toolchain is cached in this WSL, so it works from a worktree).
 cycle-count debounce (2/2/3/2 cycles). It is now event-driven:
 `script: etek_dlb` (mode single, parameter `from_watchdog`) runs when the Acrel L3 `on_value` fires (L3 is the last
 of the 0x61-0x66 block, so L1/L2/L3 are one batch); a supervisor `interval: 5s` (`etek_dlb_watchdog`) calls it with
-`from_watchdog: true` and it then ONLY checks staleness (fallback 10 A), never debounce or normal writes.
+`from_watchdog: true` and it then ONLY checks staleness (fallback 32 A), never debounce or normal writes.
 Safeguards: batch spread L1/L2/L3 timestamps must be < 500 ms else the batch is ignored (and `dlb_batch_ms` is
 not refreshed, so the supervisor still declares stale after 15 s); debounce timers in `millis()`; a gap > 5 s between
 batches (2 lost reads in a row) resets the timers; taper detection suspended 6 s after any register-109 write (L2 needs 2.7-4.8 s to follow).
@@ -114,9 +134,10 @@ i.e. permanently above ~26 A) is deliberately NOT used.
 | moderate drop (0.8-2 A) / rise >= 1 A | confirmed on 2 consecutive cycles [now: held 5 s] (rise uses the most prudent value of the window) |
 | headroom < 6 A | clamped to 6 A; **pause (reg 89 = 2) only after 3 consecutive cycles** [now: 15 s continuous] |
 | pause delay with the car at the floor | applied setpoint 6 A and L2 <= 6.5 A and total < 40 A: **45 s** (`PAUSE_FLOOR_MS`) instead of 15 s. Total >= 40 A continuously for 15 s (own timer `dlb_pause_heavy_since_ms`, a one-batch spike does not count) or L2 not following the setpoint: back to 15 s. Flashed 2026-10-23 (c4f864a); NOT yet verified on a real charge with a house peak |
+| pause idle-car guard | no pause (and the pause timers stay at zero) while L2 < 0.5 A (idle or unplugged car: pausing removes nothing and costs Modbus writes + a status 19); the countdown starts when the car draws again. Not yet flashed |
 | resume (reg 89 = 0) | headroom > 8 A for 2 cycles [now: 9 s], then the setpoint is rewritten |
 | taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes [now: not evaluated for 6 s after a write] |
-| stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint 10 A (never raised while blind), pause kept; 20 s boot grace |
+| stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint **32 A** (owner choice, blind = full power; a later fresh batch lowers it at once when the house needs it), pause kept; 20 s boot grace |
 | first cycle after boot | reg 89 = 0, then first setpoint write |
 
 Rationale for the 0.3 A margin: replay of the 19->20 Oct night showed the deadband alone left the cap above the

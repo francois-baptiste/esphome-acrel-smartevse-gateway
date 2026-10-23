@@ -1074,7 +1074,7 @@ binary_sensor:
 #
 # Plancher IEC 61851-1 (6 A) : un headroom < 6 A ne met PAS tout de suite en pause. La
 # consigne est d'abord bornée à 6 A ; la pause (registre 89 = 2) n'est déclenchée qu'après
-# 15 s continues sous 6 A (9 lots), et la reprise qu'après 9 s continues > 8 A (6 lots, ~10 s). Raison : après
+# 15 s continues sous 6 A (9 lots, voiture qui tire au moins 0,5 A : jamais de pause pour une voiture au repos), et la reprise qu'après 9 s continues > 8 A (6 lots, ~10 s). Raison : après
 # un registre 89 = 2 l'ETEK reste en statut 19 (hors service) pendant ~60 s quoi qu'on écrive
 # ensuite, et la voiture signale "charge arrêtée" - une pause doit donc rester exceptionnelle.
 # Voiture déjà au plancher (consigne 6 A et L2 <= 6,5 A) : la pause ne retire que 6 A et un léger dépassement
@@ -1090,7 +1090,8 @@ binary_sensor:
 #
 # Données périmées : si une lecture Acrel (L1/L2/L3) a plus de 15 s, ou le Linky plus de 300 s
 # (les capteurs teleinfo ne se mettent à jour qu'environ toutes les 100 s), la consigne passe
-# à 10 A (jamais relevée tant qu'on est aveugle) ; la pause éventuelle est conservée. C'est le
+# à 32 A (choix du propriétaire : capteur en panne = pleine puissance, le Linky coupe franchement plutôt qu'un
+# mode dégradé conservateur) ; la pause éventuelle est conservée. C'est le
 # superviseur qui s'en charge si plus aucun lot ne déclenche le script (bus Acrel muet) ; un lot
 # incohérent refusé ne compte pas comme donnée fraîche.
 script:
@@ -1131,6 +1132,8 @@ script:
           const uint32_t PAUSE_FLOOR_MS = 45000;    // idem, voiture au plancher et total < PAUSE_HEAVY_A
           const float PAUSE_FLOOR_L2_A = 6.5f;      // L2 mesuré <= ça = la voiture est vraiment au plancher
           const float PAUSE_HEAVY_A = 40.0f;        // total >= ça pendant PAUSE_MS : délai court (pause réactive)
+          // Voiture au repos ou débranchée (L2 ~ 0 A, 0,02-0,03 A mesuré) : couper ne retire rien, pas de pause.
+          const float PAUSE_MIN_L2_A = 0.5f;
           const uint32_t RESUME_MS = 9000;          // headroom > RESUME_HEADROOM_A en continu avant reprise
           const float RESUME_HEADROOM_A = 8.0f;
           const float TAPER_DETECT_A = 2.0f;    // L2 mesuré sous la consigne de plus de ça = fin de charge
@@ -1138,7 +1141,8 @@ script:
           // Après une écriture, L2 met 2,7 s (baisse) à 4,8 s (hausse) à suivre : sans ce délai de garde, le
           // lot suivant (2 s plus tard) verrait un L2 encore bas et prendrait une hausse pour une fin de charge.
           const uint32_t WRITE_HOLDOFF_MS = 6000;
-          const int   FALLBACK_A = 10;          // consigne en cas de données périmées
+          // Choix explicite du propriétaire : aveugle (bus Acrel ou Linky muet) = 32 A, pas de mode dégradé prudent.
+          const int   FALLBACK_A = 32;          // consigne en cas de données périmées
           const uint32_t ACREL_STALE_MS = 15000;
           const uint32_t LINKY_STALE_MS = 300000;
           const uint32_t BOOT_GRACE_MS = 20000;
@@ -1193,7 +1197,7 @@ script:
           if (stale) {
             if (now < BOOT_GRACE_MS) return;  // les premières lectures n'ont pas encore eu lieu
             int last = id(etek_dlb_last_current_a);
-            if (id(etek_dlb_enabled) != 2 && (last < 0 || last > FALLBACK_A)) {
+            if (id(etek_dlb_enabled) != 2 && last != FALLBACK_A) {
               id(etek_epc2_reg109).make_call().set_value(FALLBACK_A * REG109_SCALE).perform();
               id(etek_dlb_last_current_a) = FALLBACK_A;
               id(dlb_last_write_ms) = stamp;
@@ -1294,7 +1298,8 @@ script:
           }
 
           // ---------- Pause après 15 s (45 s voiture au plancher) sous le plancher ----------
-          if (headroom < (float) ETEK_MIN_A) {
+          // Les minuteries ne tournent que tant que la voiture tire du courant : elles repartent de zéro quand elle démarre.
+          if (headroom < (float) ETEK_MIN_A && l2 >= PAUSE_MIN_L2_A) {
             id(dlb_pause_count) += 1;
             if (id(dlb_pause_since_ms) == 0) id(dlb_pause_since_ms) = stamp;
             // Dépassement massif : sa propre minuterie, pour qu'un pic d'un seul lot ne raccourcisse pas une attente en cours.
@@ -1372,7 +1377,7 @@ script:
 
 interval:
   # Superviseur : ne fait QUE vérifier la fraîcheur des données (Acrel 15 s / Linky 300 s) quand plus
-  # aucun lot Acrel ne déclenche le script, et applique alors la consigne de secours 10 A. N'avance
+  # aucun lot Acrel ne déclenche le script, et applique alors la consigne de secours (32 A). N'avance
   # aucun debounce et n'écrit jamais de consigne normale.
   - interval: 5s
     id: etek_dlb_watchdog

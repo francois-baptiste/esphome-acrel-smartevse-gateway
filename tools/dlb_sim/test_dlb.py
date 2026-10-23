@@ -20,6 +20,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 import harness  # noqa: E402
+import model  # noqa: E402
+
+MASK32 = 0xFFFFFFFF
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--baseline", help="git revision whose config.yaml is compared in S1 (write counts)")
@@ -60,20 +63,33 @@ def amps(w):
 class Sim:
     """Event-driven clock: batch every `tick_ms` (+ optional jitter), supervisor every 5 s."""
 
-    def __init__(self, lib, pref=6.0, ev_demand=40.0, tick_ms=TICK, jitter_ms=0, watchdog=True):
+    def __init__(self, lib, pref=6.0, ev_demand=40.0, tick_ms=TICK, jitter_ms=0, watchdog=True, t0=0):
         self.lib, self.pref, self.demand = lib, pref, ev_demand
         self.tick_ms, self.jitter, self.watchdog = tick_ms, jitter_ms, watchdog
         self.linky = True
+        self.linky_at = None
         lib.h_reset()
-        self.t = 0
-        lib.h_set_time(0)
+        self.t = t0                      # t0 near 2**32 exercises the millis() wrap
+        lib.h_set_time(t0 & MASK32)
         lib.h_feed_linky(pref)
+
+    def reboot(self, boot_s=10, linky_delay_s=0):
+        """ESP reset: firmware state wiped (the ETEK keeps its settings), nothing runs for boot_s, millis() restarts at 0,
+        the first Linky frame arrives linky_delay_s after the end of the boot. writes() lists only post-reboot writes."""
+        self.lib.h_reset()
+        self.t = 0
+        self.lib.h_set_time(0)
+        self.linky, self.linky_at = False, (boot_s + linky_delay_s) * 1000
+        self._advance(boot_s * 1000)
 
     def _advance(self, ms, on_end=None):
         end = self.t + ms
         while self.t < end:
             self.t += STEP
-            self.lib.h_set_time(self.t)
+            self.lib.h_set_time(self.t & MASK32)
+            if self.linky_at is not None and self.t >= self.linky_at:
+                self.lib.h_feed_linky(self.pref)
+                self.linky, self.linky_at = True, None
             if self.linky and self.t % 100000 < STEP:
                 self.lib.h_feed_linky(self.pref)   # teleinfo refreshes about every 100 s
             if self.watchdog and self.t % WATCHDOG == 0:
@@ -259,15 +275,23 @@ s.tick(2.0, 1.0)
 s.silence(15)   # last batch + 15 s: still not stale (limit is "> 15 s")
 check("15 s of silence is not stale", new.h_get(7) == 0)
 s.silence(5)
-check("stale > 15 s -> fallback 10 A written by the supervisor", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 10)
+check("stale > 15 s -> fallback 32 A (owner choice: blind = full power) written by the supervisor", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 32)
 n = new.h_nwrites()
 s.silence(30)
 check("fallback written only once", new.h_nwrites() == n)
-for _ in range(3):
-    s.tick(2.0, 1.0)
-check("recovery: not raised after 3 batches", new.h_nwrites() == n and new.h_get(7) == 0)
 s.tick(2.0, 1.0)
-check("recovery: raised at the 4th batch to 30", amps(writes(new, 109))[-1] == 30)
+check("recovery: the first fresh batch lowers the cap from 32 to 30 A at once (drop >= 2 A)", new.h_get(7) == 0 and amps(writes(new, 109))[-1] == 30)
+s = Sim(new)
+s.tick(2.0, 1.0)
+s.silence(25)
+n = new.h_nwrites()
+s.tick(8.0, 3.0)
+check("recovery with a heavier house: strong drop written on the first batch", amps(writes(new, 109))[-1] == 22 and new.h_nwrites() == n + 1)
+s = Sim(new, pref=9.0)
+s.tick(2.0, 1.0)
+s.silence(40)
+check("cap already 32 A (9 kVA house) when the data go stale: no redundant fallback write",
+      amps(writes(new, 109)) == [32] and new.h_get(7) == 1, str(amps(writes(new, 109))))
 s = Sim(new)
 s.linky = False   # teleinfo silent after boot
 s.tick(2.0, 1.0)
@@ -276,7 +300,7 @@ for _ in range(75):   # 150 s
 check("Linky silent 150 s is not stale", new.h_get(7) == 0)
 for _ in range(90):   # past 300 s
     s.tick(2.0, 1.0)
-check("Linky silent > 300 s -> stale fallback", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 10)
+check("Linky silent > 300 s -> stale fallback 32 A", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 32)
 s = Sim(new, watchdog=False)
 s.silence(15)
 check("no fallback write inside the 20 s boot grace", new.h_nwrites() == 0)
@@ -284,7 +308,7 @@ s = Sim(new)
 s.silence(15)
 check("supervisor: no fallback write inside the 20 s boot grace", new.h_nwrites() == 0)
 s.silence(10)
-check("supervisor: fallback after the boot grace if still blind", amps(writes(new, 109)) == [10])
+check("supervisor: fallback 32 A after the boot grace if still blind", amps(writes(new, 109)) == [32])
 
 print("== S8 other subscriptions / invalid PREF ==")
 s = Sim(new, pref=9.0)
@@ -322,7 +346,7 @@ for _ in range(6):
 check("S10c rejected batches: not stale yet at 12 s", new.h_get(7) == 0 and new.h_nwrites() == n)
 for _ in range(5):
     s.skewed(2.0, 1.0, d1_ms=800)
-check("S10d rejected batches for > 15 s -> supervisor falls back to 10 A", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 10)
+check("S10d rejected batches for > 15 s -> supervisor falls back to 32 A", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 32)
 # supervisor must never advance debounce state nor write a normal setpoint
 s = Sim(new, watchdog=False)
 s.tick(8.0, 3.0)
@@ -439,6 +463,241 @@ t0 = s.t
 s.tick(10.0, 5.0)
 lat = (writes(new, 109)[-1][0] * 1000 - t0)
 check("S14 strong step written on the first batch after it (<= 2.3 s)", new.h_nwrites() == n + 1 and lat <= 2300, str(lat))
+
+print("== S15 ESP reboot in the middle of a charge ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(20):
+    s.tick(2.0, 1.0, l2=30.0)
+s.reboot(boot_s=10, linky_delay_s=0)
+for _ in range(10):
+    s.tick(2.0, 1.0, l2=30.0)
+check("S15a Linky frame at boot: reg89=0 then the same 30 A, no fallback", amps(writes(new)) == ["reg89=0", 30], str(amps(writes(new))))
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(20):
+    s.tick(2.0, 1.0, l2=30.0)
+s.reboot(boot_s=10, linky_delay_s=60)
+for _ in range(45):
+    s.tick(2.0, 1.0, l2=30.0)
+w = writes(new)
+check("S15b Linky frame 60 s after boot: fallback 32 A, then reg89=0, then the real 30 A", amps(w) == [32, "reg89=0", 30], str(amps(w)))
+check("S15b the car stays at 32 A until PREF arrives: lowered at once (drop >= 2 A) at 70 s", 70 <= w[-1][0] <= 72, str(w))
+
+print("== S16 reboot while paused: the pause is forgotten, the debounce restarts ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(9):
+    s.tick(25.0, 12.0)
+check("S16 setup: paused", new.h_get(1) == 2)
+s.reboot(boot_s=10, linky_delay_s=0)
+for _ in range(8):
+    s.tick(20.0, 9.0, l2=0.0)
+check("S16a reg89=0 sent at the first cycle, then 6 A (house still over the limit)",
+      amps(writes(new))[:2] == ["reg89=0", 6] and new.h_get(1) == 0, str(amps(writes(new))))
+for _ in range(30):
+    s.tick(20.0, 9.0, l2=0.0)
+check("S16b car still idle (L2 = 0): never paused again", new.h_get(1) == 0 and new.h_get(9) == 0)
+for _ in range(22):
+    s.tick(20.0, 9.0, l2=6.0)   # the car restarts at the floor
+check("S16c car back at 6 A: the 45 s floor wait starts from zero (no pause at 42 s)", new.h_get(1) == 0)
+for _ in range(3):
+    s.tick(20.0, 9.0, l2=6.0)
+check("S16d pause once the 45 s have elapsed", new.h_get(1) == 2)
+
+print("== S17 reboot during the end-of-charge taper ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+for l2 in [26, 22, 18, 14, 10, 7, 5]:
+    s.tick(2.0, 1.0, l2=l2)
+s.reboot(boot_s=10, linky_delay_s=0)
+for _ in range(40):
+    s.tick(2.0, 1.0, l2=5.0)
+check("S17 one rewrite of the same cap after the reboot, then frozen again (no churn)",
+      amps(writes(new)) == ["reg89=0", 30] and new.h_get(6) == 1, str(amps(writes(new))))
+
+print("== S18 millis() wrap (uint32) ==")
+# 50 ms off the wrap: a batch landing on millis() == 0 exactly would see its own stamp (1) as 4.29e9 ms old and flag
+# one stale cycle (harmless: inside the boot grace nothing is written; 1 ms in 49.7 days).
+s = Sim(new, t0=2 ** 32 - 20050)
+s.tick(2.0, 1.0)
+stale_seen = new.h_get(7)
+for _ in range(15):
+    s.tick(20.0, 10.0)
+    stale_seen |= new.h_get(7)
+check("S18a 30 s floor peak across the wrap: no pause, never stale", new.h_get(1) == 0 and not stale_seen and new.h_get(0) == 6)
+for _ in range(8):
+    s.tick(20.0, 10.0)
+check("S18b still no pause at 44 s", new.h_get(1) == 0)
+s.tick(20.0, 10.0)
+check("S18c pause at 46 s", new.h_get(1) == 2)
+s = Sim(new, t0=2 ** 32 - 3050)
+s.tick(8.0, 3.0)
+for _ in range(4):
+    s.tick(2.0, 1.0)
+check("S18d rise confirmation across the wrap: 22 A then 30 A", amps(writes(new, 109)) == [22, 30], str(amps(writes(new, 109))))
+
+print("== S19 taper transitions ==")
+s = Sim(new)
+s.tick(2.0, 1.0)
+n = new.h_nwrites()
+for l2 in [26, 22, 18, 14, 12, 0.3, 0.3, 0.3, 0.3, 10, 9, 8, 7, 6, 5]:
+    s.tick(2.0, 1.0, l2=l2)
+check("S19a dip to ~0 and recovery to 10 A in the middle of the taper: no write", new.h_nwrites() == n and new.h_get(6) == 1)
+s = Sim(new)
+s.tick(2.0, 1.0)
+for l2 in [26, 22, 18, 14, 10, 7]:
+    s.tick(2.0, 1.0, l2=l2)
+n = new.h_nwrites()
+for _ in range(5):
+    s.tick(18.0, 6.0, l2=7.0)        # house peak while tapering: freeze lifted, drop to 9 A
+for _ in range(10):
+    s.tick(2.0, 1.0, l2=7.0)         # peak over: car (7 A) still below what is allowed
+for _ in range(6):
+    s.tick(2.0, 1.0, l2=7.0)
+check("S19b house peak during the taper: exactly one drop then one rise, then frozen again",
+      amps(writes(new, 109))[-2:] == [9, 30] and new.h_nwrites() == n + 2 and new.h_get(6) == 1, str(amps(writes(new, 109))))
+s = Sim(new)
+s.tick(2.0, 1.0)
+n = new.h_nwrites()
+for _ in range(1800):                # 1 h with the car idle (0 A)
+    s.tick(2.0, 1.0, l2=0.0)
+check("S19c idle car for 1 h: no write, no pause, frozen", new.h_nwrites() == n and new.h_get(1) == 0 and new.h_get(6) == 1)
+s = Sim(new)
+s.tick(2.0, 1.0, l2=0.0)
+for _ in range(15):
+    s.tick(20.0, 8.0, l2=0.0)         # 30 s with a 28 A house, car idle
+for _ in range(10):
+    s.tick(2.0, 1.0, l2=0.0)
+check("S19d idle car + 30 s house peak at 28 A: cap 6 A, no pause; the idle car keeps the freeze, so the cap stays at 6 A",
+      amps(writes(new, 109)) == [30, 6] and new.h_get(1) == 0 and new.h_get(6) == 1, str(amps(writes(new))))
+for _ in range(4):
+    s.tick(2.0, 1.0, l2=6.0)          # the car comes back and draws the 6 A it is allowed: not a taper any more
+check("S19d' car restarts at 6 A: the cap is raised back to 30 A after the 5 s confirmation", amps(writes(new, 109)) == [30, 6, 30],
+      str(amps(writes(new, 109))))
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(10):
+    s.tick(2.0, 1.0, l2=30.0)
+n = new.h_nwrites()
+s.tick(2.0, 1.0, l2=0.2)             # BMW pauses the charge for 5 min (not a taper)
+for _ in range(150):
+    s.tick(2.0, 1.0, l2=0.2)
+s.tick(20.0, 8.0, l2=0.2)            # house rises while the car is paused
+check("S19e car-side pause with a stale 30 A cap: frozen, and the freeze lifts when the house needs the room",
+      amps(writes(new, 109))[-1] == 6 and new.h_get(6) == 0, str(amps(writes(new, 109))))
+
+print("== S20 disconnections ==")
+yaml_blocks = re.split(r"\n(?=[a-z_]+:)", cfg)
+net = {b.split(":", 1)[0]: b for b in yaml_blocks if b.split(":", 1)[0] in ("wifi", "api", "mqtt")}
+check("S20a wifi / api / mqtt all keep reboot_timeout: 0s (offline-first)",
+      set(net) == {"wifi", "api", "mqtt"} and all("reboot_timeout: 0s" in b for b in net.values()), str(sorted(net)))
+lam = harness.extract_lambda(cfg, MARKER)
+check("S20b the DLB lambda never reads network state", not re.search(r"wifi|mqtt|api::|is_connected|network::|global_api", lam))
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(9):
+    s.tick(25.0, 12.0)
+n = new.h_nwrites()
+s.silence(60)
+check("S20c Acrel silent while paused: pause kept, no fallback write, no reg89 write", new.h_get(1) == 2 and new.h_nwrites() == n and new.h_get(7) == 1)
+for _ in range(5):
+    s.tick(2.0, 1.0)
+check("S20d bus back: no resume before 9 s", new.h_get(1) == 2)
+s.tick(2.0, 1.0)
+check("S20e resume after 6 batches", new.h_get(1) == 0 and amps(writes(new))[-2:] == ["reg89=0", 30], str(amps(writes(new))[-3:]))
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(10):
+    s.tick(20.0, 10.0)               # 20 s into a 45 s floor wait
+s.silence(8)                         # lost reads: the 20 s already counted are not trusted
+for _ in range(22):
+    s.tick(20.0, 10.0)
+check("S20f gap > 5 s in the middle of the floor wait restarts it (no pause at 44 s after the gap)", new.h_get(1) == 0 and new.h_get(7) == 0)
+for _ in range(2):
+    s.tick(20.0, 10.0)
+check("S20g ... and the pause still comes once 45 s have really elapsed", new.h_get(1) == 2)
+s = Sim(new)
+s.tick(2.0, 1.0)
+s.linky = False
+for _ in range(200):                 # Linky silent 400 s at a constant house load
+    s.tick(2.0, 1.0)
+check("S20h Linky silent > 300 s: fallback 32 A once, car never paused", amps(writes(new, 109)) == [30, 32] and new.h_get(1) == 0, str(amps(writes(new))))
+s.linky = True
+s.lib.h_feed_linky(6.0)
+for _ in range(4):
+    s.tick(2.0, 1.0)
+check("S20i Linky back: 30 A restored at once (drop >= 2 A)", amps(writes(new, 109)) == [30, 32, 30], str(amps(writes(new, 109))))
+
+print("== S23 no pause for an idle car (L2 ~ 0 A) ==")
+s = Sim(new)
+s.tick(2.0, 1.0, l2=0.0)
+for _ in range(150):                 # 5 min with a 37 A house and an idle car
+    s.tick(25.0, 12.0, l2=0.0)
+check("S23a idle car, house far over the limit for 5 min: no reg89 write, only 30 then 6 A",
+      amps(writes(new)) == ["reg89=0", 30, 6] and new.h_get(1) == 0 and new.h_get(9) == 0, str(amps(writes(new))))
+for _ in range(7):
+    s.tick(25.0, 12.0, l2=6.0)       # car starts at the 6 A floor, total 43 A (heavy)
+check("S23b car starts: timers start now, no immediate pause (14 s)", new.h_get(1) == 0 and new.h_get(9) != 0)
+for _ in range(2):
+    s.tick(25.0, 12.0, l2=6.0)
+check("S23c ... pause 16 s after the car started drawing", new.h_get(1) == 2)
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(20):
+    s.tick(25.0, 12.0, l2=0.4)       # BMW-side pause / end of charge: 0.4 A
+check("S23d L2 = 0.4 A (< 0.5 A): treated as idle, no pause", new.h_get(1) == 0)
+s = Sim(new)
+s.tick(2.0, 1.0)
+for _ in range(9):
+    s.tick(27.0, 13.0, l2=0.6)       # total 40.6 A (heavy)
+check("S23e L2 = 0.6 A: the car counts as charging, pause after 16 s", new.h_get(1) == 2)
+
+print("== S21 Linky breaker model (calibration of model.py) ==")
+
+
+def trip_time(amps_fn, tau, limit_s=100000, theta0=0.0):
+    b = model.Breaker(tau)
+    b.theta = theta0
+    for t in range(limit_s):
+        b.step(amps_fn(t))
+        if b.trips:
+            return t
+    return None
+
+
+for name, tau in model.BREAKERS.items():
+    check("S21 %s: 33 A (1.10 In) for 24 h never trips" % name, trip_time(lambda t: 33.0, tau, 86400) is None)
+    check("S21 %s: 34 A (1.13 In, IEC non-tripping) for 24 h never trips" % name, trip_time(lambda t: 34.0, tau, 86400) is None)
+    th = (1.0) ** 2
+    t145 = trip_time(lambda t: 43.5, tau, 3600, theta0=th)
+    check("S21 %s: 1.45 In from hot trips within 1 h (IEC conventional tripping)" % name, t145 is not None, str(t145))
+    t2 = trip_time(lambda t: 60.0, tau, 3600)
+    check("S21 %s: 2 In from cold trips within 10 min" % name, t2 is not None and t2 < 600, str(t2))
+t35 = trip_time(lambda t: 35.0, model.BREAKERS["nominal"], 7200)
+check("S21 nominal: 35 A (1.17 In) from cold trips between 10 and 60 min", t35 is not None and 600 < t35 < 3600, str(t35))
+t35p = trip_time(lambda t: 35.0, model.BREAKERS["pessimistic"], 7200)
+check("S21 pessimistic trips 35 A at least 3x faster than nominal", t35p is not None and t35 > 3 * t35p, "%s vs %s" % (t35p, t35))
+
+print("== S22 stress smoke test (2 days x 2 seeds; full runs: stress.py) ==")
+# Blind periods (Acrel/Linky outage, reboot waiting for the first Linky frame) are on the 32 A fallback by the owner's
+# choice, so breaker trips are only asserted without outages ("clean"); the other invariants hold in every profile.
+for pname in ("clean", "faults", "hostile"):
+    tot = dict(trips=0, viol=0, ep_max=0, idle_pauses=0, n=0)
+    for seed in (11, 12):
+        h = model.make_house(seed, 2, 2.0, 30.0)
+        d, ph = model.make_demand(seed, 2)
+        r = model.simulate(new, h, d, ph, model.PROFILES[pname], seed=seed, days=2)
+        tot["trips"] += r["brk"]["nominal"][0]
+        tot["viol"] += r["viol"]
+        tot["idle_pauses"] += r["pauses_idle"]
+        tot["ep_max"] = max(tot["ep_max"], r["ep_max_s"])
+        tot["n"] += r["n"]
+    check("S22 %s: no write while the taper freeze is active" % pname, tot["viol"] == 0, str(tot))
+    check("S22 %s: an idle car is never paused" % pname, tot["idle_pauses"] == 0, str(tot))
+    if pname == "clean":
+        check("S22 clean: nominal breaker never trips", tot["trips"] == 0, str(tot))
+        check("S22 clean: no episode above limit + 3 A lasting more than 30 s", tot["ep_max"] <= 30, str(tot["ep_max"]))
 
 print()
 print("FAILED: %d" % len(fails) if fails else "ALL PASSED")
