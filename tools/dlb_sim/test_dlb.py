@@ -298,9 +298,12 @@ s.tick(2.0, 1.0)
 for _ in range(75):   # 150 s
     s.tick(2.0, 1.0)
 check("Linky silent 150 s is not stale", new.h_get(7) == 0)
-for _ in range(90):   # past 300 s
+for _ in range(135):   # 420 s: the longest gap measured on 2026-10-24 (421 s) must not be stale
     s.tick(2.0, 1.0)
-check("Linky silent > 300 s -> stale fallback 32 A", new.h_get(7) == 1 and amps(writes(new, 109))[-1] == 32)
+check("Linky silent 420 s (real burst gap) is not stale", new.h_get(7) == 0 and amps(writes(new, 109)) == [30])
+for _ in range(1000):   # 2000 s more: Linky lost for good (owner choice: never a fallback, default PREF 6 kVA)
+    s.tick(2.0, 1.0)
+check("Linky lost for good: never stale, no fallback, limit stays on the default 6 kVA", new.h_get(7) == 0 and amps(writes(new, 109)) == [30])
 s = Sim(new, watchdog=False)
 s.silence(15)
 check("no fallback write inside the 20 s boot grace", new.h_nwrites() == 0)
@@ -316,7 +319,7 @@ s.tick(2.0, 1.0)
 check("9 kVA -> cap 32 A (ETEK maximum)", amps(writes(new, 109)) == [32])
 s = Sim(new, pref=0.0)
 s.tick(2.0, 1.0)
-check("PREF=0 treated as invalid", new.h_get(7) == 1 and new.h_nwrites() == 0)
+check("PREF=0 treated as invalid: default 6 kVA, no fallback", new.h_get(7) == 0 and amps(writes(new, 109)) == [30], str(amps(writes(new, 109))))
 
 print("== S9 shipped constants ==")
 check("shipped SAFETY_MARGIN_A is 0.3", abs(shipped_margin - 0.3) < 1e-9, str(shipped_margin))
@@ -481,8 +484,8 @@ s.reboot(boot_s=10, linky_delay_s=60)
 for _ in range(45):
     s.tick(2.0, 1.0, l2=30.0)
 w = writes(new)
-check("S15b Linky frame 60 s after boot: fallback 32 A, then reg89=0, then the real 30 A", amps(w) == [32, "reg89=0", 30], str(amps(w)))
-check("S15b the car stays at 32 A until PREF arrives: lowered at once (drop >= 2 A) at 70 s", 70 <= w[-1][0] <= 72, str(w))
+check("S15b Linky frame 60 s after boot: no fallback, reg89=0 then 30 A on the default 6 kVA", amps(w) == ["reg89=0", 30], str(amps(w)))
+check("S15b ... written as soon as the boot grace is over, without waiting for PREF", w[-1][0] <= 30, str(w))
 
 print("== S16 reboot while paused: the pause is forgotten, the debounce restarts ==")
 s = Sim(new)
@@ -620,14 +623,18 @@ check("S20g ... and the pause still comes once 45 s have really elapsed", new.h_
 s = Sim(new)
 s.tick(2.0, 1.0)
 s.linky = False
-for _ in range(200):                 # Linky silent 400 s at a constant house load
+for _ in range(480):                 # Linky silent 960 s at a constant house load
     s.tick(2.0, 1.0)
-check("S20h Linky silent > 300 s: fallback 32 A once, car never paused", amps(writes(new, 109)) == [30, 32] and new.h_get(1) == 0, str(amps(writes(new))))
+check("S20h Linky silent for 960 s: no fallback, no write, car never paused", amps(writes(new, 109)) == [30] and new.h_get(1) == 0 and new.h_get(7) == 0, str(amps(writes(new))))
 s.linky = True
 s.lib.h_feed_linky(6.0)
 for _ in range(4):
     s.tick(2.0, 1.0)
-check("S20i Linky back: 30 A restored at once (drop >= 2 A)", amps(writes(new, 109)) == [30, 32, 30], str(amps(writes(new, 109))))
+check("S20i Linky back with the same PREF: nothing to write", amps(writes(new, 109)) == [30], str(amps(writes(new, 109))))
+s.lib.h_feed_linky(9.0)              # new subscription announced by the Linky: the limit follows
+for _ in range(10):
+    s.tick(2.0, 1.0)
+check("S20j a new PREF (9 kVA) received later raises the cap to 32 A", amps(writes(new, 109)) == [30, 32], str(amps(writes(new, 109))))
 
 print("== S23 no pause for an idle car (L2 ~ 0 A) ==")
 s = Sim(new)

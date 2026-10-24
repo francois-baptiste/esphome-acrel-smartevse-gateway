@@ -12,3 +12,4 @@
 
 # Windows/WSL download marker files
 *:Zone.Identifier
+__pycache__/

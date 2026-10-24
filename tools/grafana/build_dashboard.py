@@ -93,7 +93,7 @@ join(tables: {s: soc, c: cnt}, on: ["_time"])
   |> map(fn: (r) => ({
       _time: r._time,
       topic: "SoC estimé (Acrel)",
-      _value: if r.soc + (r.c - r.e0) * 0.86 / 38.1 * 100.0 > 100.0 then 100.0 else r.soc + (r.c - r.e0) * 0.86 / 38.1 * 100.0
+      _value: if r.soc + (r.c - r.e0) * 0.83 / 38.1 * 100.0 > 100.0 then 100.0 else r.soc + (r.c - r.e0) * 0.83 / 38.1 * 100.0
     }))
   |> group(columns: ["topic"])'''
 
@@ -120,7 +120,7 @@ compteur_a = (stop) =>
 
 e0 = compteur_a(stop: date.add(d: 1s, to: soc._time))
 e1 = compteur_a(stop: now())
-gain = (e1._value - e0._value) * 0.86 / cap._value * 100.0'''
+gain = (e1._value - e0._value) * 0.83 / cap._value * 100.0'''
 SOC_NOW = SOC_NOW_HEAD + '''
 
 array.from(rows: [{_time: now(), _value: if soc._value + gain > 100.0 then 100.0 else soc._value + gain}])'''
@@ -150,7 +150,7 @@ charging = if length(arr: recent) > 0 then recent[0] > 1.0 else false
 p_full = (l2(every: 10m) |> max() |> findRecord(fn: (key) => true, idx: 0))._value
 
 est = if soc._value + gain > 100.0 then 100.0 else soc._value + gain
-need_kwh = (%s - est) / 100.0 * cap._value / 0.86
+need_kwh = (%s - est) / 100.0 * cap._value / 0.83
 minutes = if need_kwh <= 0.0 then 0.0 else need_kwh / p_full * 60.0 + %s
 now_ms = float(v: int(v: now())) / 1000000.0
 
@@ -256,7 +256,7 @@ place(stat("Consigne appliquée (A)", "Dernière valeur écrite au registre 109 
 place(stat("Courant total / limite (A)", "L1+L2+L3 mesuré par l'Acrel. Limite 33 A = PREF 6 kVA / 200 x 1,10. Rouge au-delà de 33 A.",
            flux_last("dlb_courant_total_mesure"), unit="amp", decimals=1,
            steps=[{"value": 0, "color": "green"}, {"value": 30, "color": "orange"}, {"value": 33, "color": "red"}]), 9, y, 5, 4)
-place(stat("SoC estimé (%)", "Dernier SoC BMW + énergie Acrel L2 depuis x 0,86 / capacité (tools/soc_estime.flux). Indépendant de la plage de temps.",
+place(stat("SoC estimé (%)", "Dernier SoC BMW + énergie Acrel L2 depuis x 0,83 / capacité (tools/soc_estime.flux). Indépendant de la plage de temps.",
            SOC_NOW, unit="percent", decimals=0, steps=[{"value": 0, "color": "red"}, {"value": 20, "color": "orange"}, {"value": 50, "color": "green"}]), 14, y, 4, 4)
 place(stat("Pause DLB", "1 pendant reg 89 = 2 (borne arrêtée).", flux_last("dlb_pause"), mappings=ONOFF_WARN,
            steps=[{"value": 0, "color": "green"}], color_mode="background"), 18, y, 3, 4)
@@ -264,7 +264,7 @@ place(stat("Données périmées", "1 si Acrel > 15 s ou Linky PREF > 300 s : con
            mappings=ONOFF_WARN, steps=[{"value": 0, "color": "green"}], color_mode="background"), 21, y, 3, 4)
 y += 4
 REACHED = vmap({0: ("Atteint", "green")})
-ETA_DESC = ("Estimation : énergie restante (SoC estimé -> %d %%, rendement 0,86, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min)%s. "
+ETA_DESC = ("Estimation : énergie restante (SoC estimé -> %d %%, rendement 0,83, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min)%s. "
             "Calé sur 5 charges jusqu'à 100 %% (oct. 2026), précision ~±10 min. Vide si la voiture ne charge pas.")
 for target, tx, note in ((85, 0, ""), (100, 12, " + ~20 min de taper de fin de charge")):
     place(stat("Charge à %d %% : heure" % target, ETA_DESC % (target, note), eta_flux(target, "time"),
@@ -370,8 +370,8 @@ y += 8
 
 # ---------------------------------------------------------------- 5. BMW
 place(timeseries("BMW - Batterie EV : SoC affiché et estimé (%)",
-                 "SoC affiché BMW (événementiel : début et fin de trajet, parfois pendant la charge) et SoC estimé par l'énergie Acrel L2 x 0,86 / capacité depuis le dernier SoC "
-                 "(recalé à chaque SoC reçu, plafonné à 100 %). Rendement 0,86 mesuré sur 5 charges (oct. 2026).",
+                 "SoC affiché BMW (événementiel : début et fin de trajet, parfois pendant la charge) et SoC estimé par l'énergie Acrel L2 x 0,83 / capacité depuis le dernier SoC "
+                 "(recalé à chaque SoC reçu, plafonné à 100 %). Rendement 0,83 : 0,82 mesuré sur la charge complète 59 -> 100 % du 24/10, 0,86 sur les charges partielles.",
                  [query("A", BMW_SOC), query("B", SOC_SERIES)], unit="percent", minv=0, maxv=100, legend=("last", "min", "max"),
                  steps=[{"value": 0, "color": "red"}, {"value": 20, "color": "orange"}, {"value": 50, "color": "green"}],
                  custom={"fillOpacity": 0, "showPoints": "auto", "pointSize": 4, "spanNulls": True},
@@ -387,7 +387,7 @@ place(timeseries("BMW - Kilométrage (km)", "Odomètre du véhicule, rapporté p
                  overrides=[color("Odomètre", "purple")]), 12, y, 12, 8)
 y += 8
 place(stat("Consommation réelle EV (kWh / 100km)",
-           "Énergie livrée à la voiture (Acrel L2) divisée par la distance parcourue (odomètre BMW) sur la période. Inclut les pertes de charge (rendement ~0,86) : "
+           "Énergie livrée à la voiture (Acrel L2) divisée par la distance parcourue (odomètre BMW) sur la période. Inclut les pertes de charge (rendement ~0,83) : "
            "c'est la consommation au compteur, pas celle du véhicule. Choisir une période couvrant des cycles complets de charge/roulage.",
            'distance = from(bucket: "buckbuck")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n'
            '  |> filter(fn: (r) => r._measurement == "bmw" and r.property == "vehicle.vehicle.travelledDistance")\n'

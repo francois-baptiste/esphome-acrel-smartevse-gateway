@@ -1088,10 +1088,10 @@ binary_sensor:
 # La détection est suspendue 6 s après chaque écriture : L2 met 2,7-4,8 s à rejoindre la consigne,
 # un lot à +2 s ou +4 s verrait sinon une hausse comme une fin de charge.
 #
-# Données périmées : si une lecture Acrel (L1/L2/L3) a plus de 15 s, ou le Linky plus de 300 s
-# (les capteurs teleinfo ne se mettent à jour qu'environ toutes les 100 s), la consigne passe
+# Données périmées : si une lecture Acrel (L1/L2/L3) a plus de 15 s, la consigne passe
 # à 32 A (choix du propriétaire : capteur en panne = pleine puissance, le Linky coupe franchement plutôt qu'un
-# mode dégradé conservateur) ; la pause éventuelle est conservée. C'est le
+# mode dégradé conservateur) ; la pause éventuelle est conservée. Le Linky n'entre pas en compte : sa
+# puissance souscrite (dernière PREF reçue, sinon PREF_DEFAULT_KVA) ne sert qu'à calculer la limite. C'est le
 # superviseur qui s'en charge si plus aucun lot ne déclenche le script (bus Acrel muet) ; un lot
 # incohérent refusé ne compte pas comme donnée fraîche.
 script:
@@ -1144,7 +1144,11 @@ script:
           // Choix explicite du propriétaire : aveugle (bus Acrel ou Linky muet) = 32 A, pas de mode dégradé prudent.
           const int   FALLBACK_A = 32;          // consigne en cas de données périmées
           const uint32_t ACREL_STALE_MS = 15000;
-          const uint32_t LINKY_STALE_MS = 300000;
+          // Choix du propriétaire : la perte du Linky ne déclenche JAMAIS de fallback. La puissance souscrite ne sert
+          // qu'à calculer la limite : on garde la dernière PREF reçue, et PREF_DEFAULT_KVA tant qu'aucune trame n'est
+          // arrivée depuis le démarrage (les trames TIC arrivent par rafales, trous de 3 à 7 min, et la première
+          // peut prendre ~100 s). Changement d'abonnement Enedis : modifier PREF_DEFAULT_KVA et reflasher.
+          const float PREF_DEFAULT_KVA = 6.0f;
           const uint32_t BOOT_GRACE_MS = 20000;
           const uint32_t BATCH_SPREAD_MS = 500;      // L1/L2/L3 doivent venir du même lot Modbus
           const uint32_t MAX_BATCH_GAP_MS = 5000;    // trou entre deux lots : les minuteries de debounce repartent de zéro
@@ -1181,16 +1185,14 @@ script:
 
           // ---------- Fraîcheur des données ----------
           bool stale = !(id(acrel_current_l1).has_state() && id(acrel_current_l2).has_state() &&
-                         id(acrel_current_l3).has_state() && id(linky_pref).has_state());
+                         id(acrel_current_l3).has_state());
           if (!stale) {
             stale = age(id(dlb_acrel_l1_ms)) > ACREL_STALE_MS ||
                     age(id(dlb_acrel_l2_ms)) > ACREL_STALE_MS ||
                     age(id(dlb_acrel_l3_ms)) > ACREL_STALE_MS ||
                     age(id(dlb_batch_ms)) > ACREL_STALE_MS ||
-                    age(id(dlb_linky_ms)) > LINKY_STALE_MS ||
                     std::isnan(id(acrel_current_l1).state) || std::isnan(id(acrel_current_l2).state) ||
-                    std::isnan(id(acrel_current_l3).state) || std::isnan(id(linky_pref).state) ||
-                    id(linky_pref).state < 1.0f;
+                    std::isnan(id(acrel_current_l3).state);
           }
           id(dlb_stale) = stale ? 1 : 0;
 
@@ -1223,7 +1225,9 @@ script:
           const float l2 = id(acrel_current_l2).state;
           const float l3 = id(acrel_current_l3).state;
           const float total = l1 + l2 + l3;
-          const float limit = id(linky_pref).state * 1000.0f / 200.0f * BREAKER_OVERLOAD_FACTOR;
+          const float pref = (id(linky_pref).has_state() && !std::isnan(id(linky_pref).state) && id(linky_pref).state >= 1.0f)
+                                 ? id(linky_pref).state : PREF_DEFAULT_KVA;
+          const float limit = pref * 1000.0f / 200.0f * BREAKER_OVERLOAD_FACTOR;
           const float headroom = limit - (l1 + l3) - SAFETY_MARGIN_A;   // brut, peut être < 6 ou < 0
           // Borné au plancher/plafond ETEK : un creux bref de headroom donne 6 A, pas une pause.
           const float h = fminf(fmaxf(headroom, (float) ETEK_MIN_A), (float) ETEK_MAX_A);
@@ -1376,7 +1380,7 @@ script:
           }
 
 interval:
-  # Superviseur : ne fait QUE vérifier la fraîcheur des données (Acrel 15 s / Linky 300 s) quand plus
+  # Superviseur : ne fait QUE vérifier la fraîcheur des données (Acrel 15 s) quand plus
   # aucun lot Acrel ne déclenche le script, et applique alors la consigne de secours (32 A). N'avance
   # aucun debounce et n'écrit jamais de consigne normale.
   - interval: 5s

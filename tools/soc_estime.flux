@@ -5,13 +5,14 @@
 //              x rendement de charge / capacité utile (maxEnergy BMW), plafonné à 100 %.
 // Backtest 6-24 oct 2026 : BMW envoie un SoC à chaque début et fin de trajet (ainsi qu'environ toutes les 2-3 min pendant
 // certaines charges), donc le dernier SoC est en général celui d'après le dernier trajet. Rendement mesuré (5 charges
-// sans trajet et sans saturation à 100 %) : 0.82-0.89, groupé 0.864 ; 0.89 surestimait de ~1.5 point.
+// sans trajet et sans saturation à 100 %) : 0.82-0.89, groupé 0.864 ; mais une charge complète jusqu'à 100 % (59 -> 100 %, 24/10)
+// demande 19.0 kWh au compteur, soit 0.82 (équilibrage de fin de charge) : 0.83 retenu, backtest ETA 100 % à +3 min.
 // Limites : le SoC affiché plafonne à 100 % avant la fin de la charge (équilibrage) ; si la voiture a roulé sans SoC
 // remonté, le trajet n'est pas déduit (estimation trop haute).
 import "array"
 import "date"
 
-rendement = 0.86
+rendement = 0.83
 soc_property = /stateOfCharge\.displayed/
 compteur = /sensor\/acrel_energie_import__e_l2__ev_/
 

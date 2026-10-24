@@ -78,8 +78,7 @@ pauses 20-25 % but, in a house forced to 31 A, lengthens the longest episode abo
 Known limits (the stress profiles `faults`, `hostile`, `reboot15`, `lostwrites` report them as WARN): (1) FALLBACK_A = 32, an explicit
 owner choice (blind = full power, the Linky trips rather than a degraded mode): with 6 Acrel outages + 2 reboots/day (synthetic `faults`)
 the nominal breaker trips ~12 times in 56 days, versus 0 with the old 10 A fallback (`--variant FALLBACK_A=6`: no trip, ~3 % less
-energy); (2) the same 32 A applies after every ESP reboot until the first Linky frame (up to ~100 s: boot grace 20 s, PREF needed),
-so an OTA flash or a brown-out DURING a charge puts the car at 32 A for that time: flash with the car idle; (3) a lost reg 109 write is
+energy); (2) [removed 2026-10-25: after a reboot the default 6 kVA applies at once, no 32 A wait for the first Linky frame; still flash with the car idle, a reboot wipes the debounce state]; (3) a lost reg 109 write is
 never retried (no read-back check): 5 % loss gives episodes up to 550-1150 s and nominal trips; (4) `millis() == 0` exactly flags one
 stale cycle (harmless).
 Quick checks, in order: `esphome config`, the g++ harness, `compile --only-generate`; the real `compile` is the
@@ -137,7 +136,7 @@ i.e. permanently above ~26 A) is deliberately NOT used.
 | pause idle-car guard | no pause (and the pause timers stay at zero) while L2 < 0.5 A (idle or unplugged car: pausing removes nothing and costs Modbus writes + a status 19); the countdown starts when the car draws again. Flashed 2026-10-24 (d94493e) |
 | resume (reg 89 = 0) | headroom > 8 A for 2 cycles [now: 9 s], then the setpoint is rewritten |
 | taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes [now: not evaluated for 6 s after a write] |
-| stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint **32 A** (owner choice, blind = full power; a later fresh batch lowers it at once when the house needs it), pause kept; 20 s boot grace |
+| stale inputs | Acrel L1/L2/L3 older than **15 s** (or never read): setpoint **32 A** (owner choice, blind = full power; a later fresh batch lowers it at once when the house needs it), pause kept; 20 s boot grace. The Linky never triggers a fallback (owner choice 2026-10-25): the limit uses the last `PREF` received, `PREF_DEFAULT_KVA` = 6.0 until the first frame after boot or if PREF is invalid; after an Enedis subscription change edit `PREF_DEFAULT_KVA` and reflash. Frames come in bursts (gaps of 3-7 min): the former 300 s limit flagged stale twice on 2026-10-24 and the loop stopped regulating while stale |
 | first cycle after boot | reg 89 = 0, then first setpoint write |
 
 Rationale for the 0.3 A margin: replay of the 19->20 Oct night showed the deadband alone left the cap above the
@@ -191,9 +190,8 @@ Measurements: `acrel` (everything the ESP publishes; tag `topic`, field `value`)
 | `dlb_depassement_linky` | Linky overshoot bit (informational) |
 
 EV SoC estimate (Influx side only, the ESP stays local-first): `tools/flux.sh tools/soc_estime.flux` = last BMW displayed SoC + Acrel L2 kWh counted since
-then x 0.86 efficiency / BMW `maxEnergy`, capped at 100 %. Backtest 2026-10-24 (6-24 Oct): BMW pushes a SoC at each trip start and end (and every
-2-3 min during some charges), so the last SoC is normally the one after the last trip; measured efficiency 0.82-0.89 (pooled 0.864, 5 charges without trip
-or 100 % saturation; 0.89 overestimated by ~1.5 points); the displayed SoC saturates at 100 % before the charge ends. Too high only if the car drove
+then x 0.83 efficiency / BMW `maxEnergy`, capped at 100 %. Backtest 2026-10-24 (6-24 Oct): BMW pushes a SoC at each trip start and end (and every
+2-3 min during some charges), so the last SoC is normally the one after the last trip; measured efficiency 0.82-0.89 (pooled 0.864 on 5 partial charges; the full 59 -> 100 % charge of 24 Oct took 19.0 kWh = 0.82, end-of-charge balancing; 0.83 kept); the displayed SoC saturates at 100 % before the charge ends. Too high only if the car drove
 without a SoC being received.
 
 BMW properties of interest: `vehicle.powertrain.electric.battery.stateOfCharge.displayed`,
@@ -224,7 +222,12 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 
 ## Current status
 
-- Latest flash: 2026-10-24 ~01:50 CEST (23:50 UTC on the 23rd) = `config.yaml` at d94493e (32 A blind fallback + idle-car pause guard), OTA with the
+- Latest flash: 2026-10-25 ~01:40 CEST = this commit: the Linky no longer triggers any fallback (last PREF received, `PREF_DEFAULT_KVA` 6.0 until the first frame), SoC
+  efficiency 0.83 on the Influx side. OTA with the car idle (status 3, L2 0.03 A). 150 s capture: 69 DLB runs (~2.1 s), applied 31 A read back 31 A, no stale flag,
+  no pause, no error. Not yet seen live: a Linky gap during a charge (the stale flag must stay 0). First real charge on d94493e (24 Oct): no reboot, no status 19,
+  no pause, 5/2160 samples above 33.6 A (max 40.8 A, one house step), 21 setpoint changes in 2 h 40; the 300 s Linky limit flagged stale twice (PREF gaps of 421 s
+  and 301 s; first live sighting of the 32 A fallback, 31 -> 32 A at 22:42:44 UTC), hence this change.
+  Previous flash: 2026-10-24 ~01:50 CEST (23:50 UTC on the 23rd) = `config.yaml` at d94493e (32 A blind fallback + idle-car pause guard), OTA with the
   car idle (status 1, L2 0.02 A). 150 s capture from ~20 s after the boot: 72 DLB runs (~2.08 s), applied 31 A read back 31 A, no stale flag,
   no pause, no error, no Modbus error (3 'took a long time' warnings). NOT yet verified on a real charge: the 32 A fallback and the idle guard.
   Previous flash: 2026-10-23 ~23:45 CEST (21:45 UTC) = `config.yaml` at c4f864a (pause 45 s with the car at the 6 A floor), OTA with the
