@@ -1,0 +1,3442 @@
+{
+  "apiVersion": "dashboard.grafana.app/v2",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "acrel-per-phase-bmw",
+    "namespace": "stacks-1697085",
+    "uid": "cda5dd9f-9b8f-4ebc-a2a4-bc33f516a13f",
+    "resourceVersion": "2086907949029208064",
+    "generation": 1,
+    "creationTimestamp": "2026-08-10T20:10:02Z",
+    "labels": {
+      "grafana.app/deprecatedInternalID": "1741321414606848"
+    },
+    "annotations": {
+      "grafana.app/createdBy": "user:dfpl427v0j8xsb",
+      "grafana.app/saved-from-ui": "Grafana Cloud"
+    }
+  },
+  "spec": {
+    "annotations": [
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "query": {
+            "kind": "DataQuery",
+            "group": "grafana",
+            "version": "v0",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {}
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "builtIn": true
+        }
+      }
+    ],
+    "cursorSync": "Crosshair",
+    "editable": true,
+    "elements": {
+      "panel-1": {
+        "kind": "Panel",
+        "spec": {
+          "id": 1,
+          "title": "Statut borne ETEK",
+          "description": "Registre 141 : 5 en charge, 1 repos, 3 transition, 19 verrou ~60 s après une pause (reg 89 = 2).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/etek_epc2_statut/state\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> last()",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "background",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "blue"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "1": {
+                          "text": "Repos",
+                          "color": "blue",
+                          "index": 0
+                        },
+                        "3": {
+                          "text": "Transition",
+                          "color": "blue",
+                          "index": 1
+                        },
+                        "5": {
+                          "text": "En charge",
+                          "color": "green",
+                          "index": 2
+                        },
+                        "19": {
+                          "text": "Verrou 60 s (pause)",
+                          "color": "red",
+                          "index": 3
+                        }
+                      }
+                    }
+                  ]
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-2": {
+        "kind": "Panel",
+        "spec": {
+          "id": 2,
+          "title": "Consigne appliquée (A)",
+          "description": "Dernière valeur écrite au registre 109 par le DLB (-1 = aucune depuis le démarrage de l'ESP).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_consigne_appliquee/state\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> last()",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": -1,
+                        "color": "red"
+                      },
+                      {
+                        "value": 6,
+                        "color": "orange"
+                      },
+                      {
+                        "value": 10,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "amp",
+                  "decimals": 0
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-3": {
+        "kind": "Panel",
+        "spec": {
+          "id": 3,
+          "title": "Courant total / limite (A)",
+          "description": "L1+L2+L3 mesuré par l'Acrel. Limite 33 A = PREF 6 kVA / 200 x 1,10. Rouge au-delà de 33 A.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_courant_total_mesure/state\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> last()",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      },
+                      {
+                        "value": 30,
+                        "color": "orange"
+                      },
+                      {
+                        "value": 33,
+                        "color": "red"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "amp",
+                  "decimals": 1
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-4": {
+        "kind": "Panel",
+        "spec": {
+          "id": 4,
+          "title": "SoC estimé (%)",
+          "description": "Dernier SoC BMW + énergie Acrel L2 depuis x 0,86 / capacité (tools/soc_estime.flux). Indépendant de la plage de temps.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "import \"array\"\nimport \"date\"\n\nbmw_last = (p) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -7d)\n    |> filter(fn: (r) => r._measurement == \"bmw\" and r.property =~ p)\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\nsoc = bmw_last(p: /stateOfCharge\\.displayed/)\ncap = bmw_last(p: /batteryManagement\\.maxEnergy/)\n\ncompteur_a = (stop) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -30d, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\ne0 = compteur_a(stop: date.add(d: 1s, to: soc._time))\ne1 = compteur_a(stop: now())\ngain = (e1._value - e0._value) * 0.86 / cap._value * 100.0\n\narray.from(rows: [{_time: now(), _value: if soc._value + gain > 100.0 then 100.0 else soc._value + gain}])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "red"
+                      },
+                      {
+                        "value": 20,
+                        "color": "orange"
+                      },
+                      {
+                        "value": 50,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "percent",
+                  "decimals": 0
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-5": {
+        "kind": "Panel",
+        "spec": {
+          "id": 5,
+          "title": "Pause DLB",
+          "description": "1 pendant reg 89 = 2 (borne arrêtée).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_pause/state\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> last()",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "background",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Non",
+                          "color": "green",
+                          "index": 0
+                        },
+                        "1": {
+                          "text": "Oui",
+                          "color": "red",
+                          "index": 1
+                        }
+                      }
+                    }
+                  ]
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-6": {
+        "kind": "Panel",
+        "spec": {
+          "id": 6,
+          "title": "Données périmées",
+          "description": "1 si Acrel > 15 s ou Linky PREF > 300 s : consigne de secours 32 A.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_donnees_perimees/state\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> last()",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "background",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Non",
+                          "color": "green",
+                          "index": 0
+                        },
+                        "1": {
+                          "text": "Oui",
+                          "color": "red",
+                          "index": 1
+                        }
+                      }
+                    }
+                  ]
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-7": {
+        "kind": "Panel",
+        "spec": {
+          "id": 7,
+          "title": "DLB - Courant total vs limite (A)",
+          "description": "Courant total mesuré (L1+L2+L3) contre la limite 33 A, headroom brut (limite - maison - 0,3 A, peut être < 6 ou < 0) et cible bornée 6..32 A.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_courant_total_mesure/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Total mesuré\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_limite_totale/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Limite\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_headroom_brut/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Headroom brut\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_cible_bornee/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Cible bornée\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "last"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 5,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "amp"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Total mesuré"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "green",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineWidth",
+                        "value": 3
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Limite"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "red",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineStyle",
+                        "value": {
+                          "fill": "dash",
+                          "dash": [
+                            10,
+                            10
+                          ]
+                        }
+                      },
+                      {
+                        "id": "custom.fillOpacity",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Headroom brut"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "blue",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.fillOpacity",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Cible bornée"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "purple",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.fillOpacity",
+                        "value": 0
+                      },
+                      {
+                        "id": "custom.lineInterpolation",
+                        "value": "stepAfter"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-8": {
+        "kind": "Panel",
+        "spec": {
+          "id": 8,
+          "title": "DLB - Consigne vs courant voiture (A)",
+          "description": "Consigne écrite (reg 109), relue côté ETEK (doit être égale) et courant réel de la voiture (Acrel L2). L2 suit la consigne en 3-5 s ; un écart durable = gel taper (fin de charge).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_consigne_appliquee/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Consigne appliquée\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_consigne_etek_relue/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Consigne relue ETEK\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_courant_l2__voiture_ev_/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Courant voiture L2\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "last",
+                    "min",
+                    "max"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 5,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "amp"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Consigne appliquée"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "blue",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineInterpolation",
+                        "value": "stepAfter"
+                      },
+                      {
+                        "id": "custom.fillOpacity",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Consigne relue ETEK"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "light-blue",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineInterpolation",
+                        "value": "stepAfter"
+                      },
+                      {
+                        "id": "custom.lineStyle",
+                        "value": {
+                          "fill": "dash",
+                          "dash": [
+                            6,
+                            6
+                          ]
+                        }
+                      },
+                      {
+                        "id": "custom.fillOpacity",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Courant voiture L2"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-9": {
+        "kind": "Panel",
+        "spec": {
+          "id": 9,
+          "title": "Statut borne ETEK (reg 141)",
+          "description": "Chronologie du statut : 5 en charge, 1 repos, 3 transition, 19 verrou après pause.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/etek_epc2_statut/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Statut ETEK\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "state-timeline",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "alignValue": "left",
+                "mergeValues": true,
+                "rowHeight": 0.8,
+                "showValue": "auto",
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "1": {
+                          "text": "Repos",
+                          "color": "blue",
+                          "index": 0
+                        },
+                        "3": {
+                          "text": "Transition",
+                          "color": "blue",
+                          "index": 1
+                        },
+                        "5": {
+                          "text": "En charge",
+                          "color": "green",
+                          "index": 2
+                        },
+                        "19": {
+                          "text": "Verrou 60 s (pause)",
+                          "color": "red",
+                          "index": 3
+                        }
+                      }
+                    }
+                  ],
+                  "custom": {
+                    "fillOpacity": 80,
+                    "lineWidth": 0,
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    }
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-10": {
+        "kind": "Panel",
+        "spec": {
+          "id": 10,
+          "title": "DLB - Drapeaux",
+          "description": "Pause (reg 89 = 2), gel taper (consigne figée en fin de charge ou voiture au repos), données périmées (fallback 32 A), bit dépassement Linky (informatif).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_pause/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Pause\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_gel_taper/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Gel taper\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_donnees_perimees/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Données périmées\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_depassement_linky/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Dépassement Linky (info)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "state-timeline",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "alignValue": "left",
+                "mergeValues": true,
+                "rowHeight": 0.8,
+                "showValue": "auto",
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Non",
+                          "color": "dark-green",
+                          "index": 0
+                        },
+                        "1": {
+                          "text": "Oui",
+                          "color": "blue",
+                          "index": 1
+                        }
+                      }
+                    }
+                  ],
+                  "custom": {
+                    "fillOpacity": 80,
+                    "lineWidth": 0,
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    }
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Pause"
+                    },
+                    "properties": [
+                      {
+                        "id": "mappings",
+                        "value": [
+                          {
+                            "type": "value",
+                            "options": {
+                              "0": {
+                                "text": "Non",
+                                "color": "green",
+                                "index": 0
+                              },
+                              "1": {
+                                "text": "Oui",
+                                "color": "red",
+                                "index": 1
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Données périmées"
+                    },
+                    "properties": [
+                      {
+                        "id": "mappings",
+                        "value": [
+                          {
+                            "type": "value",
+                            "options": {
+                              "0": {
+                                "text": "Non",
+                                "color": "green",
+                                "index": 0
+                              },
+                              "1": {
+                                "text": "Oui",
+                                "color": "red",
+                                "index": 1
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-11": {
+        "kind": "Panel",
+        "spec": {
+          "id": 11,
+          "title": "DLB - Confirmations et compteurs",
+          "description": "Confirmation en attente (signée : + montée, - baisse modérée), compteurs de cycles vers la pause et la reprise (télémétrie ; les décisions utilisent des minuteurs millis()).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_confirmation_en_attente/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Confirmation en attente\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_compteur_pause/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Compteur pause\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_compteur_reprise/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Compteur reprise\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nunion(tables: [S0, S1, S2])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "max",
+                    "last"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "stepAfter",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-12": {
+        "kind": "Panel",
+        "spec": {
+          "id": 12,
+          "title": "DLB - Réécritures reg 109 et pauses par heure",
+          "description": "Nombre de changements de consigne (reg 109) par heure (attendu <= ~4/h, ancienne logique 14,8/h) et de pauses (reg 89 = 2). Un retour à -1 (redémarrage ESP) compte comme un changement.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_consigne_appliquee/state\")\n  |> difference()\n  |> filter(fn: (r) => r._value != 0.0)\n  |> aggregateWindow(every: 1h, column: \"_value\", fn: count, createEmpty: true)\n  |> map(fn: (r) => ({ _time: r._time, _value: r._value, topic: \"Réécritures reg 109/h\" }))\n  |> group(columns: [\"topic\"])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_pause/state\")\n  |> difference()\n  |> filter(fn: (r) => r._value > 0.5)\n  |> aggregateWindow(every: 1h, column: \"_value\", fn: count, createEmpty: true)\n  |> map(fn: (r) => ({ _time: r._time, _value: r._value, topic: \"Pauses/h\" }))\n  |> group(columns: [\"topic\"])",
+                        "range": true
+                      }
+                    },
+                    "refId": "B",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "sum",
+                    "max"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "bars",
+                    "fillOpacity": 60,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 1,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "decimals": 0
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Réécritures reg 109/h"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "blue",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Pauses/h"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "red",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-13": {
+        "kind": "Panel",
+        "spec": {
+          "id": 13,
+          "title": "Linky - Courant, tension et puissance apparente",
+          "description": "Mesures du Linky (TIC standard, ~1 échantillon / 100 s). Puissance apparente en VA sur l'axe de droite.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/linky_courant/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Courant Linky (A)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/linky_tension/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Tension Linky (V)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/linky_puissance_apparente_instantan__e/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Puissance apparente (VA)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "mean",
+                    "max",
+                    "last"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 4,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "showValues": false,
+                    "spanNulls": true,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Courant Linky (A)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "yellow",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "unit",
+                        "value": "amp"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Tension Linky (V)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "green",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "unit",
+                        "value": "volt"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "hidden"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Puissance apparente (VA)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "red",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "unit",
+                        "value": "voltamp"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-14": {
+        "kind": "Panel",
+        "spec": {
+          "id": 14,
+          "title": "Linky - Puissance de référence souscrite (kVA)",
+          "description": "PREF : 6 kVA, base de la limite DLB (33 A). Une valeur absente > 300 s déclenche le fallback.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/linky_puissance_de_r__f__rence_souscrite/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"PREF (kVA)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "last"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 4,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "showValues": false,
+                    "spanNulls": true,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "none"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-15": {
+        "kind": "Panel",
+        "spec": {
+          "id": 15,
+          "title": "Puissance Active par phase (kW)",
+          "description": "L1=Rangée 1, L2=Voiture EV, L3=Rangée 2, plus totale. Source: Acrel via Waveshare.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l1/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L1 (Rangée 1)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L2 (Voiture EV)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l3/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L3 (Rangée 2)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_totale/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Totale\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "mean",
+                    "max"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 5,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "kwatt"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "L2 (Voiture EV)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Totale"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "green",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineWidth",
+                        "value": 3
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-16": {
+        "kind": "Panel",
+        "spec": {
+          "id": 16,
+          "title": "Courant par phase (A)",
+          "description": "Courant par phase: L1=Rangée 1, L2=Voiture EV, L3=Rangée 2. Source: Acrel via Waveshare.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_courant_l1__rang__e_1_/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L1 (Rangée 1)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_courant_l2__voiture_ev_/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L2 (Voiture EV)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_courant_l3__rang__e_2_/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L3 (Rangée 2)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "mean",
+                    "max"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 5,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "amp"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "L2 (Voiture EV)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-17": {
+        "kind": "Panel",
+        "spec": {
+          "id": 17,
+          "title": "Tension par phase (V)",
+          "description": "Tension L1/L2/L3. Seuils EN 50160: 207V min, 246V max (normal), 253V critique.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_tension_l1/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Tension L1\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_tension_l2/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Tension L2\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_tension_l3/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Tension L3\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "mean",
+                    "min",
+                    "max"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "red"
+                      },
+                      {
+                        "value": 207,
+                        "color": "green"
+                      },
+                      {
+                        "value": 246,
+                        "color": "orange"
+                      },
+                      {
+                        "value": 253,
+                        "color": "red"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 5,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "volt"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-18": {
+        "kind": "Panel",
+        "spec": {
+          "id": 18,
+          "title": "Énergie cumulée (kWh)",
+          "description": "Compteurs d'énergie importée: total + par phase (L1=Rangée 1, L2=Voiture EV, L3=Rangée 2).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l1/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L1 (Rangée 1)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L2 (Voiture EV)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l3/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"L3 (Rangée 2)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_active_import__e/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Total importé\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "last"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 5,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "kilowatthour"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "L2 (Voiture EV)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Total importé"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "green",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineWidth",
+                        "value": 3
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-19": {
+        "kind": "Panel",
+        "spec": {
+          "id": 19,
+          "title": "Facteur de puissance (cos φ) & Fréquence (Hz)",
+          "description": "PF total + PF par phase (axe gauche) et fréquence réseau (axe droit). PF idéal ≈ 1.0.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_facteur_de_puissance_totale/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"PF total\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_facteur_de_puissance_l1/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"PF L1\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_facteur_de_puissance_l2/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"PF L2\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_facteur_de_puissance_l3/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"PF L3\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nS4 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_fr__quence/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Fréquence (Hz)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3, S4])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "mean",
+                    "min"
+                  ],
+                  "displayMode": "list",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "smooth",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 1,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "showValues": false,
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "PF total"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "green",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineWidth",
+                        "value": 3
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Fréquence (Hz)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "purple",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "unit",
+                        "value": "hertz"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      },
+                      {
+                        "id": "custom.axisLabel",
+                        "value": "Hz"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-20": {
+        "kind": "Panel",
+        "spec": {
+          "id": 20,
+          "title": "BMW - Batterie EV : SoC affiché et estimé (%)",
+          "description": "SoC affiché BMW (événementiel : début et fin de trajet, parfois pendant la charge) et SoC estimé par l'énergie Acrel L2 x 0,86 / capacité depuis le dernier SoC (recalé à chaque SoC reçu, plafonné à 100 %). Rendement 0,86 mesuré sur 5 charges (oct. 2026).",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"bmw\" and r.property == \"vehicle.powertrain.electric.battery.stateOfCharge.displayed\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> map(fn: (r) => ({ r with topic: \"SoC BMW (affiché)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "import \"date\"\nimport \"internal/debug\"\n\ndebut = date.sub(d: 3d, from: v.timeRangeStart)\n\nsoc = from(bucket: \"buckbuck\")\n  |> range(start: debut, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"bmw\" and r.property == \"vehicle.powertrain.electric.battery.stateOfCharge.displayed\")\n  |> aggregateWindow(every: 5m, fn: last, createEmpty: true)\n  |> keep(columns: [\"_time\", \"_value\"])\n\ncnt = from(bucket: \"buckbuck\")\n  |> range(start: debut, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n  |> aggregateWindow(every: 5m, fn: last, createEmpty: true)\n  |> fill(usePrevious: true)\n  |> keep(columns: [\"_time\", \"_value\"])\n\njoin(tables: {s: soc, c: cnt}, on: [\"_time\"])\n  |> map(fn: (r) => ({\n      _time: r._time,\n      soc: r._value_s,\n      c: r._value_c,\n      e0: if exists r._value_s then r._value_c else debug.null(type: \"float\")\n    }))\n  |> fill(column: \"soc\", usePrevious: true)\n  |> fill(column: \"e0\", usePrevious: true)\n  |> filter(fn: (r) => exists r.soc and exists r.e0 and exists r.c and r._time >= v.timeRangeStart)\n  |> map(fn: (r) => ({\n      _time: r._time,\n      topic: \"SoC estimé (Acrel)\",\n      _value: if r.soc + (r.c - r.e0) * 0.86 / 38.1 * 100.0 > 100.0 then 100.0 else r.soc + (r.c - r.e0) * 0.86 / 38.1 * 100.0\n    }))\n  |> group(columns: [\"topic\"])",
+                        "range": true
+                      }
+                    },
+                    "refId": "B",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "last",
+                    "min",
+                    "max"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "red"
+                      },
+                      {
+                        "value": 20,
+                        "color": "orange"
+                      },
+                      {
+                        "value": 50,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 4,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "showValues": false,
+                    "spanNulls": true,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "percent",
+                  "min": 0,
+                  "max": 100
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "SoC BMW (affiché)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "blue",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "SoC estimé (Acrel)"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "orange",
+                          "mode": "fixed"
+                        }
+                      },
+                      {
+                        "id": "custom.lineStyle",
+                        "value": {
+                          "fill": "dash",
+                          "dash": [
+                            8,
+                            8
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-21": {
+        "kind": "Panel",
+        "spec": {
+          "id": 21,
+          "title": "BMW - Kilométrage (km)",
+          "description": "Odomètre du véhicule, rapporté par BMW CarData.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"bmw\" and r.property == \"vehicle.vehicle.travelledDistance\")\n  |> keep(columns: [\"_time\", \"_value\"])\n  |> map(fn: (r) => ({ r with topic: \"Odomètre\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: last, createEmpty: false)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "annotations": {
+                  "clustering": -1,
+                  "multiLane": false
+                },
+                "legend": {
+                  "calcs": [
+                    "last"
+                  ],
+                  "displayMode": "table",
+                  "enableFacetedFilter": false,
+                  "overflow": "ellipsis",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "timezone": [
+                  "browser"
+                ],
+                "tooltip": {
+                  "hideZeros": false,
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "palette-classic",
+                    "seriesBy": "max"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "barWidthFactor": 0.9,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 4,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "showValues": false,
+                    "spanNulls": true,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "unit": "lengthkm"
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Odomètre"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "purple",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "panel-22": {
+        "kind": "Panel",
+        "spec": {
+          "id": 22,
+          "title": "Consommation réelle EV (kWh / 100km)",
+          "description": "Énergie livrée à la voiture (Acrel L2) divisée par la distance parcourue (odomètre BMW) sur la période. Inclut les pertes de charge (rendement ~0,86) : c'est la consommation au compteur, pas celle du véhicule. Choisir une période couvrant des cycles complets de charge/roulage.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "distance = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"bmw\" and r.property == \"vehicle.vehicle.travelledDistance\")\n  |> spread()\n  |> set(key: \"metric\", value: \"distance_km\")\n\nenergy = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n  |> spread()\n  |> set(key: \"metric\", value: \"energy_kwh\")\n\nunion(tables: [distance, energy])\n  |> pivot(rowKey: [\"_start\"], columnKey: [\"metric\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      _time: r._stop,\n      _value: if exists r.distance_km and r.distance_km > 0.0 then r.energy_kwh / r.distance_km * 100.0 else 0.0\n    }))\n  |> keep(columns: [\"_time\", \"_value\"])",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "green"
+                      },
+                      {
+                        "value": 20,
+                        "color": "orange"
+                      },
+                      {
+                        "value": 25,
+                        "color": "red"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "none",
+                  "decimals": 1
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "layout": {
+      "kind": "GridLayout",
+      "spec": {
+        "items": [
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 0,
+              "width": 5,
+              "height": 4,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-1"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 5,
+              "y": 0,
+              "width": 4,
+              "height": 4,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-2"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 9,
+              "y": 0,
+              "width": 5,
+              "height": 4,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-3"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 14,
+              "y": 0,
+              "width": 4,
+              "height": 4,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-4"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 18,
+              "y": 0,
+              "width": 3,
+              "height": 4,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-5"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 21,
+              "y": 0,
+              "width": 3,
+              "height": 4,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-6"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 4,
+              "width": 24,
+              "height": 9,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-7"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 13,
+              "width": 24,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-8"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 21,
+              "width": 12,
+              "height": 5,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-9"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 12,
+              "y": 21,
+              "width": 12,
+              "height": 5,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-10"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 26,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-11"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 12,
+              "y": 26,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-12"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 34,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-13"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 12,
+              "y": 34,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-14"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 42,
+              "width": 24,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-15"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 50,
+              "width": 24,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-16"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 58,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-17"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 12,
+              "y": 58,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-18"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 66,
+              "width": 24,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-19"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 74,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-20"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 12,
+              "y": 74,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-21"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 82,
+              "width": 24,
+              "height": 5,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-22"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "links": [],
+    "liveNow": false,
+    "preload": false,
+    "tags": [
+      "acrel",
+      "waveshare",
+      "dlb",
+      "etek",
+      "linky",
+      "bmw",
+      "ev"
+    ],
+    "timeSettings": {
+      "timezone": "browser",
+      "from": "now-6h",
+      "to": "now",
+      "autoRefresh": "30s",
+      "autoRefreshIntervals": [
+        "5s",
+        "10s",
+        "30s",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "1d"
+      ],
+      "hideTimepicker": false,
+      "fiscalYearStartMonth": 0
+    },
+    "title": "Tableau Élec bmw",
+    "variables": [],
+    "preferences": {
+      "layout": {
+        "kind": "GridLayout",
+        "spec": {
+          "items": []
+        }
+      }
+    }
+  }
+}
