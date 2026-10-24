@@ -610,6 +610,378 @@
         "kind": "Panel",
         "spec": {
           "id": 7,
+          "title": "Charge à 85 % : heure",
+          "description": "Estimation : énergie restante (SoC estimé -> 85 %, rendement 0,86, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min). Calé sur 5 charges jusqu'à 100 % (oct. 2026), précision ~±10 min. Vide si la voiture ne charge pas.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "import \"array\"\nimport \"date\"\n\nbmw_last = (p) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -7d)\n    |> filter(fn: (r) => r._measurement == \"bmw\" and r.property =~ p)\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\nsoc = bmw_last(p: /stateOfCharge\\.displayed/)\ncap = bmw_last(p: /batteryManagement\\.maxEnergy/)\n\ncompteur_a = (stop) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -30d, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\ne0 = compteur_a(stop: date.add(d: 1s, to: soc._time))\ne1 = compteur_a(stop: now())\ngain = (e1._value - e0._value) * 0.86 / cap._value * 100.0\nl2 = (every) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -60m)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n    |> aggregateWindow(every: every, fn: mean, createEmpty: false)\n\nrecent = from(bucket: \"buckbuck\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n  |> max()\n  |> findColumn(fn: (key) => true, column: \"_value\")\ncharging = if length(arr: recent) > 0 then recent[0] > 1.0 else false\np_full = (l2(every: 10m) |> max() |> findRecord(fn: (key) => true, idx: 0))._value\n\nest = if soc._value + gain > 100.0 then 100.0 else soc._value + gain\nneed_kwh = (85.0 - est) / 100.0 * cap._value / 0.86\nminutes = if need_kwh <= 0.0 then 0.0 else need_kwh / p_full * 60.0 + 0.0\nnow_ms = float(v: int(v: now())) / 1000000.0\n\narray.from(rows: [{_time: now(), _value: (if minutes == 0.0 then 0.0 else now_ms + minutes * 60000.0)}])\n  |> filter(fn: (r) => charging)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "blue"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "dateTimeAsLocalNoDateIfToday",
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Atteint",
+                          "color": "green",
+                          "index": 0
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "Pas en charge"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-8": {
+        "kind": "Panel",
+        "spec": {
+          "id": 8,
+          "title": "Charge à 85 % : dans",
+          "description": "Estimation : énergie restante (SoC estimé -> 85 %, rendement 0,86, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min). Calé sur 5 charges jusqu'à 100 % (oct. 2026), précision ~±10 min. Vide si la voiture ne charge pas.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "import \"array\"\nimport \"date\"\n\nbmw_last = (p) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -7d)\n    |> filter(fn: (r) => r._measurement == \"bmw\" and r.property =~ p)\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\nsoc = bmw_last(p: /stateOfCharge\\.displayed/)\ncap = bmw_last(p: /batteryManagement\\.maxEnergy/)\n\ncompteur_a = (stop) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -30d, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\ne0 = compteur_a(stop: date.add(d: 1s, to: soc._time))\ne1 = compteur_a(stop: now())\ngain = (e1._value - e0._value) * 0.86 / cap._value * 100.0\nl2 = (every) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -60m)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n    |> aggregateWindow(every: every, fn: mean, createEmpty: false)\n\nrecent = from(bucket: \"buckbuck\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n  |> max()\n  |> findColumn(fn: (key) => true, column: \"_value\")\ncharging = if length(arr: recent) > 0 then recent[0] > 1.0 else false\np_full = (l2(every: 10m) |> max() |> findRecord(fn: (key) => true, idx: 0))._value\n\nest = if soc._value + gain > 100.0 then 100.0 else soc._value + gain\nneed_kwh = (85.0 - est) / 100.0 * cap._value / 0.86\nminutes = if need_kwh <= 0.0 then 0.0 else need_kwh / p_full * 60.0 + 0.0\nnow_ms = float(v: int(v: now())) / 1000000.0\n\narray.from(rows: [{_time: now(), _value: minutes * 60000.0}])\n  |> filter(fn: (r) => charging)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "blue"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "dtdurationms",
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Atteint",
+                          "color": "green",
+                          "index": 0
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "Pas en charge"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-9": {
+        "kind": "Panel",
+        "spec": {
+          "id": 9,
+          "title": "Charge à 100 % : heure",
+          "description": "Estimation : énergie restante (SoC estimé -> 100 %, rendement 0,86, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min) + ~20 min de taper de fin de charge. Calé sur 5 charges jusqu'à 100 % (oct. 2026), précision ~±10 min. Vide si la voiture ne charge pas.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "import \"array\"\nimport \"date\"\n\nbmw_last = (p) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -7d)\n    |> filter(fn: (r) => r._measurement == \"bmw\" and r.property =~ p)\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\nsoc = bmw_last(p: /stateOfCharge\\.displayed/)\ncap = bmw_last(p: /batteryManagement\\.maxEnergy/)\n\ncompteur_a = (stop) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -30d, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\ne0 = compteur_a(stop: date.add(d: 1s, to: soc._time))\ne1 = compteur_a(stop: now())\ngain = (e1._value - e0._value) * 0.86 / cap._value * 100.0\nl2 = (every) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -60m)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n    |> aggregateWindow(every: every, fn: mean, createEmpty: false)\n\nrecent = from(bucket: \"buckbuck\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n  |> max()\n  |> findColumn(fn: (key) => true, column: \"_value\")\ncharging = if length(arr: recent) > 0 then recent[0] > 1.0 else false\np_full = (l2(every: 10m) |> max() |> findRecord(fn: (key) => true, idx: 0))._value\n\nest = if soc._value + gain > 100.0 then 100.0 else soc._value + gain\nneed_kwh = (100.0 - est) / 100.0 * cap._value / 0.86\nminutes = if need_kwh <= 0.0 then 0.0 else need_kwh / p_full * 60.0 + 20.0\nnow_ms = float(v: int(v: now())) / 1000000.0\n\narray.from(rows: [{_time: now(), _value: (if minutes == 0.0 then 0.0 else now_ms + minutes * 60000.0)}])\n  |> filter(fn: (r) => charging)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "blue"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "dateTimeAsLocalNoDateIfToday",
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Atteint",
+                          "color": "green",
+                          "index": 0
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "Pas en charge"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-10": {
+        "kind": "Panel",
+        "spec": {
+          "id": 10,
+          "title": "Charge à 100 % : dans",
+          "description": "Estimation : énergie restante (SoC estimé -> 100 %, rendement 0,86, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min) + ~20 min de taper de fin de charge. Calé sur 5 charges jusqu'à 100 % (oct. 2026), précision ~±10 min. Vide si la voiture ne charge pas.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "influxdb",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "cfpmdg2x9bim8a"
+                      },
+                      "spec": {
+                        "query": "import \"array\"\nimport \"date\"\n\nbmw_last = (p) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -7d)\n    |> filter(fn: (r) => r._measurement == \"bmw\" and r.property =~ p)\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\nsoc = bmw_last(p: /stateOfCharge\\.displayed/)\ncap = bmw_last(p: /batteryManagement\\.maxEnergy/)\n\ncompteur_a = (stop) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -30d, stop: stop)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_energie_import__e_l2__ev_/state\")\n    |> last()\n    |> findRecord(fn: (key) => true, idx: 0)\n\ne0 = compteur_a(stop: date.add(d: 1s, to: soc._time))\ne1 = compteur_a(stop: now())\ngain = (e1._value - e0._value) * 0.86 / cap._value * 100.0\nl2 = (every) =>\n  from(bucket: \"buckbuck\")\n    |> range(start: -60m)\n    |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n    |> aggregateWindow(every: every, fn: mean, createEmpty: false)\n\nrecent = from(bucket: \"buckbuck\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state\")\n  |> max()\n  |> findColumn(fn: (key) => true, column: \"_value\")\ncharging = if length(arr: recent) > 0 then recent[0] > 1.0 else false\np_full = (l2(every: 10m) |> max() |> findRecord(fn: (key) => true, idx: 0))._value\n\nest = if soc._value + gain > 100.0 then 100.0 else soc._value + gain\nneed_kwh = (100.0 - est) / 100.0 * cap._value / 0.86\nminutes = if need_kwh <= 0.0 then 0.0 else need_kwh / p_full * 60.0 + 20.0\nnow_ms = float(v: int(v: now())) / 1000000.0\n\narray.from(rows: [{_time: now(), _value: minutes * 60000.0}])\n  |> filter(fn: (r) => charging)",
+                        "range": true
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": [],
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "13.2.0-28084260209",
+            "spec": {
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "text": {},
+                "textMode": "value",
+                "wideLayout": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": 0,
+                        "color": "blue"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "unit": "dtdurationms",
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "0": {
+                          "text": "Atteint",
+                          "color": "green",
+                          "index": 0
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "Pas en charge"
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-11": {
+        "kind": "Panel",
+        "spec": {
+          "id": 11,
           "title": "DLB - Courant total vs limite (A)",
           "description": "Courant total mesuré (L1+L2+L3) contre la limite 33 A, headroom brut (limite - maison - 0,3 A, peut être < 6 ou < 0) et cible bornée 6..32 A.",
           "links": [],
@@ -823,10 +1195,10 @@
           }
         }
       },
-      "panel-8": {
+      "panel-12": {
         "kind": "Panel",
         "spec": {
-          "id": 8,
+          "id": 12,
           "title": "DLB - Consigne vs courant voiture (A)",
           "description": "Consigne écrite (reg 109), relue côté ETEK (doit être égale) et courant réel de la voiture (Acrel L2). L2 suit la consigne en 3-5 s ; un écart durable = gel taper (fin de charge).",
           "links": [],
@@ -1021,10 +1393,10 @@
           }
         }
       },
-      "panel-9": {
+      "panel-13": {
         "kind": "Panel",
         "spec": {
-          "id": 9,
+          "id": 13,
           "title": "Statut borne ETEK (reg 141)",
           "description": "Chronologie du statut : 5 en charge, 1 repos, 3 transition, 19 verrou après pause.",
           "links": [],
@@ -1134,10 +1506,10 @@
           }
         }
       },
-      "panel-10": {
+      "panel-14": {
         "kind": "Panel",
         "spec": {
-          "id": 10,
+          "id": 14,
           "title": "DLB - Drapeaux",
           "description": "Pause (reg 89 = 2), gel taper (consigne figée en fin de charge ou voiture au repos), données périmées (fallback 32 A), bit dépassement Linky (informatif).",
           "links": [],
@@ -1294,10 +1666,10 @@
           }
         }
       },
-      "panel-11": {
+      "panel-15": {
         "kind": "Panel",
         "spec": {
-          "id": 11,
+          "id": 15,
           "title": "DLB - Confirmations et compteurs",
           "description": "Confirmation en attente (signée : + montée, - baisse modérée), compteurs de cycles vers la pause et la reprise (télémétrie ; les décisions utilisent des minuteurs millis()).",
           "links": [],
@@ -1418,10 +1790,10 @@
           }
         }
       },
-      "panel-12": {
+      "panel-16": {
         "kind": "Panel",
         "spec": {
-          "id": 12,
+          "id": 16,
           "title": "DLB - Réécritures reg 109 et pauses par heure",
           "description": "Nombre de changements de consigne (reg 109) par heure (attendu <= ~4/h, ancienne logique 14,8/h) et de pauses (reg 89 = 2). Un retour à -1 (redémarrage ESP) compte comme un changement.",
           "links": [],
@@ -1593,10 +1965,10 @@
           }
         }
       },
-      "panel-13": {
+      "panel-17": {
         "kind": "Panel",
         "spec": {
-          "id": 13,
+          "id": 17,
           "title": "Linky - Courant, tension et puissance apparente",
           "description": "Mesures du Linky (TIC standard, ~1 échantillon / 100 s). Puissance apparente en VA sur l'axe de droite.",
           "links": [],
@@ -1784,10 +2156,10 @@
           }
         }
       },
-      "panel-14": {
+      "panel-18": {
         "kind": "Panel",
         "spec": {
-          "id": 14,
+          "id": 18,
           "title": "Linky - Puissance de référence souscrite (kVA)",
           "description": "PREF : 6 kVA, base de la limite DLB (33 A). Une valeur absente > 300 s déclenche le fallback.",
           "links": [],
@@ -1908,10 +2280,10 @@
           }
         }
       },
-      "panel-15": {
+      "panel-19": {
         "kind": "Panel",
         "spec": {
-          "id": 15,
+          "id": 19,
           "title": "Puissance Active par phase (kW)",
           "description": "L1=Rangée 1, L2=Voiture EV, L3=Rangée 2, plus totale. Source: Acrel via Waveshare.",
           "links": [],
@@ -2068,10 +2440,10 @@
           }
         }
       },
-      "panel-16": {
+      "panel-20": {
         "kind": "Panel",
         "spec": {
-          "id": 16,
+          "id": 20,
           "title": "Courant par phase (A)",
           "description": "Courant par phase: L1=Rangée 1, L2=Voiture EV, L3=Rangée 2. Source: Acrel via Waveshare.",
           "links": [],
@@ -2209,10 +2581,10 @@
           }
         }
       },
-      "panel-17": {
+      "panel-21": {
         "kind": "Panel",
         "spec": {
-          "id": 17,
+          "id": 21,
           "title": "Tension par phase (V)",
           "description": "Tension L1/L2/L3. Seuils EN 50160: 207V min, 246V max (normal), 253V critique.",
           "links": [],
@@ -2347,10 +2719,10 @@
           }
         }
       },
-      "panel-18": {
+      "panel-22": {
         "kind": "Panel",
         "spec": {
-          "id": 18,
+          "id": 22,
           "title": "Énergie cumulée (kWh)",
           "description": "Compteurs d'énergie importée: total + par phase (L1=Rangée 1, L2=Voiture EV, L3=Rangée 2).",
           "links": [],
@@ -2506,10 +2878,10 @@
           }
         }
       },
-      "panel-19": {
+      "panel-23": {
         "kind": "Panel",
         "spec": {
-          "id": 19,
+          "id": 23,
           "title": "Facteur de puissance (cos φ) & Fréquence (Hz)",
           "description": "PF total + PF par phase (axe gauche) et fréquence réseau (axe droit). PF idéal ≈ 1.0.",
           "links": [],
@@ -2677,10 +3049,10 @@
           }
         }
       },
-      "panel-20": {
+      "panel-24": {
         "kind": "Panel",
         "spec": {
-          "id": 20,
+          "id": 24,
           "title": "BMW - Batterie EV : SoC affiché et estimé (%)",
           "description": "SoC affiché BMW (événementiel : début et fin de trajet, parfois pendant la charge) et SoC estimé par l'énergie Acrel L2 x 0,86 / capacité depuis le dernier SoC (recalé à chaque SoC reçu, plafonné à 100 %). Rendement 0,86 mesuré sur 5 charges (oct. 2026).",
           "links": [],
@@ -2873,10 +3245,10 @@
           }
         }
       },
-      "panel-21": {
+      "panel-25": {
         "kind": "Panel",
         "spec": {
-          "id": 21,
+          "id": 25,
           "title": "BMW - Kilométrage (km)",
           "description": "Odomètre du véhicule, rapporté par BMW CarData.",
           "links": [],
@@ -3013,10 +3385,10 @@
           }
         }
       },
-      "panel-22": {
+      "panel-26": {
         "kind": "Panel",
         "spec": {
-          "id": 22,
+          "id": 26,
           "title": "Consommation réelle EV (kWh / 100km)",
           "description": "Énergie livrée à la voiture (Acrel L2) divisée par la distance parcourue (odomètre BMW) sur la période. Inclut les pertes de charge (rendement ~0,86) : c'est la consommation au compteur, pas celle du véhicule. Choisir une période couvrant des cycles complets de charge/roulage.",
           "links": [],
@@ -3190,8 +3562,8 @@
             "spec": {
               "x": 0,
               "y": 4,
-              "width": 24,
-              "height": 9,
+              "width": 6,
+              "height": 3,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-7"
@@ -3201,10 +3573,10 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
-              "x": 0,
-              "y": 13,
-              "width": 24,
-              "height": 8,
+              "x": 6,
+              "y": 4,
+              "width": 6,
+              "height": 3,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-8"
@@ -3214,10 +3586,10 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
-              "x": 0,
-              "y": 21,
-              "width": 12,
-              "height": 5,
+              "x": 12,
+              "y": 4,
+              "width": 6,
+              "height": 3,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-9"
@@ -3227,10 +3599,10 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
-              "x": 12,
-              "y": 21,
-              "width": 12,
-              "height": 5,
+              "x": 18,
+              "y": 4,
+              "width": 6,
+              "height": 3,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-10"
@@ -3241,9 +3613,9 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 0,
-              "y": 26,
-              "width": 12,
-              "height": 8,
+              "y": 7,
+              "width": 24,
+              "height": 9,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-11"
@@ -3253,9 +3625,9 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
-              "x": 12,
-              "y": 26,
-              "width": 12,
+              "x": 0,
+              "y": 16,
+              "width": 24,
               "height": 8,
               "element": {
                 "kind": "ElementReference",
@@ -3267,9 +3639,9 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 0,
-              "y": 34,
+              "y": 24,
               "width": 12,
-              "height": 8,
+              "height": 5,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-13"
@@ -3280,9 +3652,9 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 12,
-              "y": 34,
+              "y": 24,
               "width": 12,
-              "height": 8,
+              "height": 5,
               "element": {
                 "kind": "ElementReference",
                 "name": "panel-14"
@@ -3293,8 +3665,8 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 0,
-              "y": 42,
-              "width": 24,
+              "y": 29,
+              "width": 12,
               "height": 8,
               "element": {
                 "kind": "ElementReference",
@@ -3305,9 +3677,9 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
-              "x": 0,
-              "y": 50,
-              "width": 24,
+              "x": 12,
+              "y": 29,
+              "width": 12,
               "height": 8,
               "element": {
                 "kind": "ElementReference",
@@ -3319,7 +3691,7 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 0,
-              "y": 58,
+              "y": 37,
               "width": 12,
               "height": 8,
               "element": {
@@ -3332,7 +3704,7 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 12,
-              "y": 58,
+              "y": 37,
               "width": 12,
               "height": 8,
               "element": {
@@ -3345,7 +3717,7 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 0,
-              "y": 66,
+              "y": 45,
               "width": 24,
               "height": 8,
               "element": {
@@ -3358,8 +3730,8 @@
             "kind": "GridLayoutItem",
             "spec": {
               "x": 0,
-              "y": 74,
-              "width": 12,
+              "y": 53,
+              "width": 24,
               "height": 8,
               "element": {
                 "kind": "ElementReference",
@@ -3370,8 +3742,8 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
-              "x": 12,
-              "y": 74,
+              "x": 0,
+              "y": 61,
               "width": 12,
               "height": 8,
               "element": {
@@ -3383,13 +3755,65 @@
           {
             "kind": "GridLayoutItem",
             "spec": {
+              "x": 12,
+              "y": 61,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-22"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
               "x": 0,
-              "y": 82,
+              "y": 69,
+              "width": 24,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-23"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 77,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-24"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 12,
+              "y": 77,
+              "width": 12,
+              "height": 8,
+              "element": {
+                "kind": "ElementReference",
+                "name": "panel-25"
+              }
+            }
+          },
+          {
+            "kind": "GridLayoutItem",
+            "spec": {
+              "x": 0,
+              "y": 85,
               "width": 24,
               "height": 5,
               "element": {
                 "kind": "ElementReference",
-                "name": "panel-22"
+                "name": "panel-26"
               }
             }
           }

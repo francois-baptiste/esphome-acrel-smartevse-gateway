@@ -98,7 +98,7 @@ join(tables: {s: soc, c: cnt}, on: ["_time"])
   |> group(columns: ["topic"])'''
 
 # Même calcul que tools/soc_estime.flux, indépendant de la plage du dashboard (dernier SoC BMW + énergie depuis).
-SOC_NOW = '''import "array"
+SOC_NOW_HEAD = '''import "array"
 import "date"
 
 bmw_last = (p) =>
@@ -120,9 +120,43 @@ compteur_a = (stop) =>
 
 e0 = compteur_a(stop: date.add(d: 1s, to: soc._time))
 e1 = compteur_a(stop: now())
-gain = (e1._value - e0._value) * 0.86 / cap._value * 100.0
+gain = (e1._value - e0._value) * 0.86 / cap._value * 100.0'''
+SOC_NOW = SOC_NOW_HEAD + '''
 
 array.from(rows: [{_time: now(), _value: if soc._value + gain > 100.0 then 100.0 else soc._value + gain}])'''
+
+def eta_flux(target, mode):
+    """Heure (mode "time", ms epoch) ou durée restante (mode "dur", ms) avant `target` % de SoC.
+
+    Pas de ligne (stat "Pas en charge") si L2 < 1 kW depuis 5 min. Puissance = max sur 60 min des moyennes de 10 min de L2
+    (garde le plein régime pendant le taper). Modèle calé sur 5 charges jusqu'à 100 % (oct. 2026) : temps linéaire à pleine
+    puissance + ~20 min de taper constant pour atteindre 100 % (la charge se termine ~20 min après la fin du plein régime).
+    """
+    taper = 20.0 if target >= 100 else 0.0
+    value = "(if minutes == 0.0 then 0.0 else now_ms + minutes * 60000.0)" if mode == "time" else "minutes * 60000.0"
+    return SOC_NOW_HEAD + '''
+l2 = (every) =>
+  from(bucket: "buckbuck")
+    |> range(start: -60m)
+    |> filter(fn: (r) => r._measurement == "acrel" and r.topic == "passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state")
+    |> aggregateWindow(every: every, fn: mean, createEmpty: false)
+
+recent = from(bucket: "buckbuck")
+  |> range(start: -5m)
+  |> filter(fn: (r) => r._measurement == "acrel" and r.topic == "passerelle-energie-waveshare/sensor/acrel_puissance_active_l2/state")
+  |> max()
+  |> findColumn(fn: (key) => true, column: "_value")
+charging = if length(arr: recent) > 0 then recent[0] > 1.0 else false
+p_full = (l2(every: 10m) |> max() |> findRecord(fn: (key) => true, idx: 0))._value
+
+est = if soc._value + gain > 100.0 then 100.0 else soc._value + gain
+need_kwh = (%s - est) / 100.0 * cap._value / 0.86
+minutes = if need_kwh <= 0.0 then 0.0 else need_kwh / p_full * 60.0 + %s
+now_ms = float(v: int(v: now())) / 1000000.0
+
+array.from(rows: [{_time: now(), _value: %s}])
+  |> filter(fn: (r) => charging)''' % (float(target), taper, value)
+
 
 BMW_SOC = '''from(bucket: "buckbuck")
   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
@@ -169,9 +203,9 @@ def timeseries(title, desc, queries, unit=None, overrides=None, legend=("mean", 
     return panel(title, desc, queries, "timeseries", options, {"defaults": defaults, "overrides": overrides or []})
 
 
-def stat(title, desc, text, unit=None, steps=None, mappings=None, decimals=None, color_mode="value", graph="none"):
+def stat(title, desc, text, unit=None, steps=None, mappings=None, decimals=None, color_mode="value", graph="none", no_value=None):
     defaults = {"thresholds": {"mode": "absolute", "steps": steps or [{"value": 0, "color": "green"}]}, "color": {"mode": "thresholds"}}
-    for k, v in (("unit", unit), ("mappings", mappings), ("decimals", decimals)):
+    for k, v in (("unit", unit), ("mappings", mappings), ("decimals", decimals), ("noValue", no_value)):
         if v is not None:
             defaults[k] = v
     options = {"colorMode": color_mode, "graphMode": graph, "justifyMode": "auto", "orientation": "auto",
@@ -229,6 +263,15 @@ place(stat("Pause DLB", "1 pendant reg 89 = 2 (borne arrêtée).", flux_last("dl
 place(stat("Données périmées", "1 si Acrel > 15 s ou Linky PREF > 300 s : consigne de secours 32 A.", flux_last("dlb_donnees_perimees"),
            mappings=ONOFF_WARN, steps=[{"value": 0, "color": "green"}], color_mode="background"), 21, y, 3, 4)
 y += 4
+REACHED = vmap({0: ("Atteint", "green")})
+ETA_DESC = ("Estimation : énergie restante (SoC estimé -> %d %%, rendement 0,86, capacité BMW) / puissance L2 à plein régime (max sur 60 min des moyennes de 10 min)%s. "
+            "Calé sur 5 charges jusqu'à 100 %% (oct. 2026), précision ~±10 min. Vide si la voiture ne charge pas.")
+for target, tx, note in ((85, 0, ""), (100, 12, " + ~20 min de taper de fin de charge")):
+    place(stat("Charge à %d %% : heure" % target, ETA_DESC % (target, note), eta_flux(target, "time"),
+               unit="dateTimeAsLocalNoDateIfToday", steps=[{"value": 0, "color": "blue"}], no_value="Pas en charge", mappings=REACHED), tx, y, 6, 3)
+    place(stat("Charge à %d %% : dans" % target, ETA_DESC % (target, note), eta_flux(target, "dur"),
+               unit="dtdurationms", steps=[{"value": 0, "color": "blue"}], no_value="Pas en charge", mappings=REACHED), tx + 6, y, 6, 3)
+y += 3
 
 # ---------------------------------------------------------------- 2. DLB
 place(timeseries(
