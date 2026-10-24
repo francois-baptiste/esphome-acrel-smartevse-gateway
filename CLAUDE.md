@@ -134,7 +134,7 @@ i.e. permanently above ~26 A) is deliberately NOT used.
 | moderate drop (0.8-2 A) / rise >= 1 A | confirmed on 2 consecutive cycles [now: held 5 s] (rise uses the most prudent value of the window) |
 | headroom < 6 A | clamped to 6 A; **pause (reg 89 = 2) only after 3 consecutive cycles** [now: 15 s continuous] |
 | pause delay with the car at the floor | applied setpoint 6 A and L2 <= 6.5 A and total < 40 A: **45 s** (`PAUSE_FLOOR_MS`) instead of 15 s. Total >= 40 A continuously for 15 s (own timer `dlb_pause_heavy_since_ms`, a one-batch spike does not count) or L2 not following the setpoint: back to 15 s. Flashed 2026-10-23 (c4f864a); NOT yet verified on a real charge with a house peak |
-| pause idle-car guard | no pause (and the pause timers stay at zero) while L2 < 0.5 A (idle or unplugged car: pausing removes nothing and costs Modbus writes + a status 19); the countdown starts when the car draws again. Not yet flashed |
+| pause idle-car guard | no pause (and the pause timers stay at zero) while L2 < 0.5 A (idle or unplugged car: pausing removes nothing and costs Modbus writes + a status 19); the countdown starts when the car draws again. Flashed 2026-10-24 (d94493e) |
 | resume (reg 89 = 0) | headroom > 8 A for 2 cycles [now: 9 s], then the setpoint is rewritten |
 | taper freeze (`dlb_gel_taper` = 1) | L2 measured > 2 A below setpoint and headroom >= L2 + 6 A: no register writes [now: not evaluated for 6 s after a write] |
 | stale inputs | Acrel L1/L2/L3 older than **15 s** or Linky `PREF` older than **300 s** (teleinfo updates only every ~100 s) or invalid PREF (<1): setpoint **32 A** (owner choice, blind = full power; a later fresh batch lowers it at once when the house needs it), pause kept; 20 s boot grace |
@@ -190,6 +190,12 @@ Measurements: `acrel` (everything the ESP publishes; tag `topic`, field `value`)
 | `dlb_donnees_perimees` | 1 while inputs are stale |
 | `dlb_depassement_linky` | Linky overshoot bit (informational) |
 
+EV SoC estimate (Influx side only, the ESP stays local-first): `tools/flux.sh tools/soc_estime.flux` = last BMW displayed SoC + Acrel L2 kWh counted since
+then x 0.86 efficiency / BMW `maxEnergy`, capped at 100 %. Backtest 2026-10-24 (6-24 Oct): BMW pushes a SoC at each trip start and end (and every
+2-3 min during some charges), so the last SoC is normally the one after the last trip; measured efficiency 0.82-0.89 (pooled 0.864, 5 charges without trip
+or 100 % saturation; 0.89 overestimated by ~1.5 points); the displayed SoC saturates at 100 % before the charge ends. Too high only if the car drove
+without a SoC being received.
+
 BMW properties of interest: `vehicle.powertrain.electric.battery.stateOfCharge.displayed`,
 `vehicle.drivetrain.electricEngine.charging.acAmpere` (holds stale values), `...acVoltage`,
 `vehicle.vehicle.travelledDistance`, `vehicle.drivetrain.batteryManagement.maxEnergy`. The feed is event driven
@@ -218,7 +224,10 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 
 ## Current status
 
-- Latest flash: 2026-10-23 ~23:45 CEST (21:45 UTC) = `config.yaml` at c4f864a (pause 45 s with the car at the 6 A floor), OTA with the
+- Latest flash: 2026-10-24 ~01:50 CEST (23:50 UTC on the 23rd) = `config.yaml` at d94493e (32 A blind fallback + idle-car pause guard), OTA with the
+  car idle (status 1, L2 0.02 A). 150 s capture from ~20 s after the boot: 72 DLB runs (~2.08 s), applied 31 A read back 31 A, no stale flag,
+  no pause, no error, no Modbus error (3 'took a long time' warnings). NOT yet verified on a real charge: the 32 A fallback and the idle guard.
+  Previous flash: 2026-10-23 ~23:45 CEST (21:45 UTC) = `config.yaml` at c4f864a (pause 45 s with the car at the 6 A floor), OTA with the
   car idle (status 1, L2 0.03 A). 70 s capture afterwards: 34 DLB runs (~2.06 s), applied 22 A read back 22 A, no stale flag,
   no pause, no Modbus error (only 'took a long time' warnings of 58-71 ms), no reboot. Earlier flash:
 - `master` = the commit that adds the 2 s event-driven DLB (see `git log`). Flashed firmware = that `config.yaml`,

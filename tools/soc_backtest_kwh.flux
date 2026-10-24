@@ -1,0 +1,5 @@
+from(bucket: "buckbuck")
+  |> range(start: 2026-10-06T00:00:00Z)
+  |> filter(fn: (r) => r._measurement == "acrel" and r.topic =~ /sensor\/acrel_energie_import__e_l2__ev_/)
+  |> aggregateWindow(every: 1m, fn: last, createEmpty: false)
+  |> keep(columns: ["_time", "_value"])
