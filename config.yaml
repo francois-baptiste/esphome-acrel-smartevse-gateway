@@ -89,6 +89,12 @@ globals:
     type: uint32_t
     initial_value: '0'
 
+  # Dernière lecture réussie du statut ETEK (reg 141, interrogé toutes les 2 s) ; 0 = aucune depuis le boot.
+  # Télémétrie seule (capteur "DLB ETEK injoignable") : la boucle DLB n'en tient pas compte.
+  - id: dlb_etek_ms
+    type: uint32_t
+    initial_value: '0'
+
   # Dernier lot Acrel L1+L2+L3 accepté par la boucle (cohérent à 500 ms près) ; 0 = aucun depuis le boot.
   - id: dlb_batch_ms
     type: uint32_t
@@ -274,6 +280,8 @@ sensor:
     register_type: holding
     address: 141 # "Current working status", codes 0-13 (cf. table LED p.14 pour la correspondance)
     value_type: U_WORD
+    on_value:
+      - lambda: id(dlb_etek_ms) = millis();   # publié à chaque lecture réussie, même sans changement
 
   - platform: modbus_controller
     modbus_controller_id: etek_epc2
@@ -982,6 +990,18 @@ sensor:
     accuracy_decimals: 0
     update_interval: 5s
     lambda: 'return (float) id(dlb_stale);'
+
+  # 1 si l'ETEK ne répond plus : aucune lecture du statut (reg 141) depuis 15 s (7 interrogations de 2 s perdues),
+  # ou aucune depuis le boot après 30 s. Informatif : la boucle DLB ne s'en sert pas et n'écrit pas autrement.
+  - platform: template
+    name: "DLB ETEK injoignable"
+    id: dlb_etek_unreachable_sensor
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      const uint32_t now = millis();
+      if (id(dlb_etek_ms) == 0) return now > 30000 ? 1.0f : 0.0f;
+      return (uint32_t) (now - id(dlb_etek_ms)) > 15000 ? 1.0f : 0.0f;
 
   - platform: template
     name: "DLB Depassement Linky"

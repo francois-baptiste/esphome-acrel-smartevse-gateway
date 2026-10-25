@@ -1511,7 +1511,7 @@
         "spec": {
           "id": 14,
           "title": "DLB - Drapeaux",
-          "description": "Pause (reg 89 = 2), gel taper (consigne figée en fin de charge ou voiture au repos), données périmées (fallback 32 A), bit dépassement Linky (informatif).",
+          "description": "Pause (reg 89 = 2), gel taper (consigne figée en fin de charge ou voiture au repos), données périmées (Acrel, fallback 32 A), ETEK injoignable (plus de lecture du statut depuis 15 s, informatif), bit dépassement Linky (informatif).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -1528,7 +1528,7 @@
                         "name": "cfpmdg2x9bim8a"
                       },
                       "spec": {
-                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_pause/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Pause\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_gel_taper/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Gel taper\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_donnees_perimees/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Données périmées\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_depassement_linky/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Dépassement Linky (info)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3])",
+                        "query": "S0 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_pause/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Pause\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS1 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_gel_taper/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Gel taper\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS2 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_donnees_perimees/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Données périmées\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS3 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_etek_injoignable/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"ETEK injoignable\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nS4 = from(bucket: \"buckbuck\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"acrel\" and r.topic == \"passerelle-energie-waveshare/sensor/dlb_depassement_linky/state\")\n  |> keep(columns: [\"_time\", \"_value\", \"topic\"])\n  |> map(fn: (r) => ({ r with topic: \"Dépassement Linky (info)\" }))\n  |> group(columns: [\"topic\"])\n  |> aggregateWindow(every: v.windowPeriod, column: \"_value\", fn: max, createEmpty: false)\n\nunion(tables: [S0, S1, S2, S3, S4])",
                         "range": true
                       }
                     },
@@ -1636,6 +1636,34 @@
                     "matcher": {
                       "id": "byName",
                       "options": "Données périmées"
+                    },
+                    "properties": [
+                      {
+                        "id": "mappings",
+                        "value": [
+                          {
+                            "type": "value",
+                            "options": {
+                              "0": {
+                                "text": "Non",
+                                "color": "green",
+                                "index": 0
+                              },
+                              "1": {
+                                "text": "Oui",
+                                "color": "red",
+                                "index": 1
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "ETEK injoignable"
                     },
                     "properties": [
                       {

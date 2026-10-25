@@ -187,6 +187,7 @@ Measurements: `acrel` (everything the ESP publishes; tag `topic`, field `value`)
 | `dlb_confirmation_en_attente` | signed pending count (+ rise, - moderate drop) |
 | `dlb_gel_taper` | 1 while the setpoint is frozen (taper or idle car) |
 | `dlb_donnees_perimees` | 1 while inputs are stale |
+| `dlb_etek_injoignable` | 1 if no ETEK status (reg 141) read for 15 s (or none 30 s after boot); telemetry only, the DLB ignores it (no write retry either) |
 | `dlb_depassement_linky` | Linky overshoot bit (informational) |
 
 EV SoC estimate (Influx side only, the ESP stays local-first): `tools/flux.sh tools/soc_estime.flux` = last BMW displayed SoC + Acrel L2 kWh counted since
@@ -222,7 +223,9 @@ and sparse. Known Acrel/Telegraf logging gap: 2026-08-24 -> 2026-10-06.
 
 ## Current status
 
-- Latest flash: 2026-10-25 ~01:40 CEST = this commit: the Linky no longer triggers any fallback (last PREF received, `PREF_DEFAULT_KVA` 6.0 until the first frame), SoC
+- Latest flash: 2026-10-25 ~02:05 CEST = this commit: new telemetry sensor `dlb_etek_injoignable` (ETEK status not read for 15 s), DLB logic unchanged. OTA with the car
+  idle (status 3, L2 0.03 A); 120 s capture: 52 DLB runs, applied 31 A = read back 31 A, no stale flag, no pause, no error, `dlb_etek_injoignable` 0.
+  Previous flash: 2026-10-25 ~01:40 CEST (d60f0f4): the Linky no longer triggers any fallback (last PREF received, `PREF_DEFAULT_KVA` 6.0 until the first frame), SoC
   efficiency 0.83 on the Influx side. OTA with the car idle (status 3, L2 0.03 A). 150 s capture: 69 DLB runs (~2.1 s), applied 31 A read back 31 A, no stale flag,
   no pause, no error. Not yet seen live: a Linky gap during a charge (the stale flag must stay 0). First real charge on d94493e (24 Oct): no reboot, no status 19,
   no pause, 5/2160 samples above 33.6 A (max 40.8 A, one house step), 21 setpoint changes in 2 h 40; the 300 s Linky limit flagged stale twice (PREF gaps of 421 s

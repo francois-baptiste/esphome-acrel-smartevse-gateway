@@ -300,12 +300,13 @@ place(timeseries(
 y += 8
 place(state_timeline("Statut borne ETEK (reg 141)", "Chronologie du statut : 5 en charge, 1 repos, 3 transition, 19 verrou après pause.",
                      [query("A", flux_union([("etek_epc2_statut", "Statut ETEK", "last")]))], STATUT), 0, y, 12, 5)
-place(state_timeline("DLB - Drapeaux", "Pause (reg 89 = 2), gel taper (consigne figée en fin de charge ou voiture au repos), données périmées (fallback 32 A), bit dépassement Linky (informatif).",
+place(state_timeline("DLB - Drapeaux", "Pause (reg 89 = 2), gel taper (consigne figée en fin de charge ou voiture au repos), données périmées (Acrel, fallback 32 A), ETEK injoignable (plus de lecture du statut depuis 15 s, informatif), bit dépassement Linky (informatif).",
                      [query("A", flux_union([("dlb_pause", "Pause", "max"), ("dlb_gel_taper", "Gel taper", "max"),
-                                             ("dlb_donnees_perimees", "Données périmées", "max"), ("dlb_depassement_linky", "Dépassement Linky (info)", "max")]))],
+                                             ("dlb_donnees_perimees", "Données périmées", "max"), ("dlb_etek_injoignable", "ETEK injoignable", "max"),
+                                             ("dlb_depassement_linky", "Dépassement Linky (info)", "max")]))],
                      ONOFF_INFO, overrides=[
                          {"matcher": {"id": "byName", "options": n}, "properties": [{"id": "mappings", "value": ONOFF_WARN}]}
-                         for n in ("Pause", "Données périmées")]), 12, y, 12, 5)
+                         for n in ("Pause", "Données périmées", "ETEK injoignable")]), 12, y, 12, 5)
 y += 5
 place(timeseries("DLB - Confirmations et compteurs",
                  "Confirmation en attente (signée : + montée, - baisse modérée), compteurs de cycles vers la pause et la reprise (télémétrie ; les décisions utilisent des minuteurs millis()).",
